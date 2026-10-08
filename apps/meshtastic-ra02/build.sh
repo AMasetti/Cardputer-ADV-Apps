@@ -54,6 +54,10 @@ fi
 echo ">> pio run -e $ENV"
 pio run -d "$FW" -e "$ENV"
 
+# Meshtastic nombra el binario de app firmware-<env>-<version>.bin
+# (sin .factory, que es el merged con bootloader y no sirve para el Launcher).
+BIN=$(ls "$FW/.pio/build/$ENV"/firmware-"$ENV"-*.bin 2>/dev/null | grep -v '\.factory\.bin$' | head -1)
+[ -n "$BIN" ] || { echo "No se encontró firmware-$ENV-*.bin en $FW/.pio/build/$ENV" >&2; exit 1; }
 mkdir -p "$OUT_DIR"
-cp "$FW/.pio/build/$ENV/firmware.bin" "$OUT_DIR/firmware.bin"
+cp "$BIN" "$OUT_DIR/firmware.bin"
 echo ">> OK: $OUT_DIR/firmware.bin"

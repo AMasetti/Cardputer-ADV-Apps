@@ -35,6 +35,22 @@ if compgen -G "$APP_DIR/patches/*.patch" > /dev/null; then
   done
 fi
 
+# pioarduino corre un "pio run" anidado desde ~/.platformio/penv y lo instala
+# con "pioarduino>=6.1.19", que hoy resuelve a 6.2.0 y rompe tool-scons.
+# Se crea el penv con pkg install y se fija la versión antes de compilar.
+PIO_VERSION="${PIO_VERSION:-6.1.19}"
+echo ">> pio pkg install -e $ENV"
+pio pkg install -d "$FW" -e "$ENV"
+PENV_PY="${PLATFORMIO_CORE_DIR:-$HOME/.platformio}/penv/bin/python"
+if [ -x "$PENV_PY" ]; then
+  echo ">> Fijando pioarduino==$PIO_VERSION en el penv"
+  if command -v uv >/dev/null; then
+    uv pip install --python "$PENV_PY" "pioarduino==$PIO_VERSION"
+  else
+    "$PENV_PY" -m pip install "pioarduino==$PIO_VERSION"
+  fi
+fi
+
 echo ">> pio run -e $ENV"
 pio run -d "$FW" -e "$ENV"
 

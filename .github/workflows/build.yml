@@ -22,6 +22,9 @@ on:
 permissions:
   contents: write
 
+env:
+  PIO_VERSION: "6.1.19"
+
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -101,10 +104,12 @@ jobs:
             ~/.platformio
             ~/.cache/pip
             apps/${{ matrix.app }}/.work
-          key: pio-${{ matrix.app }}-${{ hashFiles(format('apps/{0}/platformio.ini', matrix.app), format('apps/{0}/app.json', matrix.app), format('apps/{0}/variant/platformio.ini', matrix.app)) }}
-          restore-keys: pio-${{ matrix.app }}-
+          key: pio-${{ env.PIO_VERSION }}-${{ matrix.app }}-${{ hashFiles(format('apps/{0}/platformio.ini', matrix.app), format('apps/{0}/app.json', matrix.app), format('apps/{0}/variant/platformio.ini', matrix.app)) }}
+          restore-keys: pio-${{ env.PIO_VERSION }}-${{ matrix.app }}-
 
-      - run: pip install --upgrade platformio
+      # PlatformIO 6.2.0 rompe pioarduino (tool-scons 4.11 vs 4.8.1 ->
+      # "No module named SCons.Tool.FortranCommon"). Ver pioarduino/platform-espressif32#529.
+      - run: pip install "platformio==${{ env.PIO_VERSION }}" uv
 
       - name: Build
         id: build

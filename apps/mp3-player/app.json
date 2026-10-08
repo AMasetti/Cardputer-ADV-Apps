@@ -1,0 +1,9 @@
+{
+  "name": "mp3-player",
+  "displayName": "MP3 Player",
+  "version": "0.1.0",
+  "description": "Reproductor de MP3 desde la microSD (/music) con lista, play/pausa, siguiente/anterior y volumen.",
+  "target": "cardputer-adv",
+  "builder": "platformio",
+  "env": "cardputer"
+}

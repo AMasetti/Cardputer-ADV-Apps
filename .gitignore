@@ -1,0 +1,6 @@
+.pio/
+.work/
+build/
+dist/
+.vscode/
+*.pyc

@@ -1,0 +1,14 @@
+{
+  "name": "meshtastic-ra02",
+  "displayName": "Meshtastic RA-02",
+  "version": "0.1.0",
+  "description": "Meshtastic para Cardputer-Adv con un RA-02 (SX1278, 433 MHz) en el header EXT 14P, en lugar del Cap LoRa-1262.",
+  "target": "cardputer-adv",
+  "builder": "custom",
+  "upstream": {
+    "repo": "https://github.com/meshtastic/firmware",
+    "ref": "v2.8.1.8e6a88d",
+    "baseVariant": "variants/esp32s3/m5stack_cardputer_adv",
+    "env": "m5stack-cardputer-adv-ra02"
+  }
+}

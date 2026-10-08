@@ -1,0 +1,179 @@
+name: build-apps
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/**"
+      - "scripts/**"
+      - ".github/workflows/build.yml"
+  pull_request:
+    paths:
+      - "apps/**"
+      - "scripts/**"
+      - ".github/workflows/build.yml"
+  workflow_dispatch:
+    inputs:
+      apps:
+        description: 'Apps a compilar, separadas por coma, o "all"'
+        default: "all"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      apps: ${{ steps.pick.outputs.apps }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: pick
+        shell: bash
+        run: |
+          case "${{ github.event_name }}" in
+            pull_request) APPS=$(scripts/changed-apps.sh "${{ github.event.pull_request.base.sha }}") ;;
+            push)         APPS=$(scripts/changed-apps.sh "${{ github.event.before }}") ;;
+            workflow_dispatch)
+              if [ "${{ inputs.apps }}" = "all" ]; then
+                APPS=$(scripts/changed-apps.sh all)
+              else
+                APPS=$(echo "${{ inputs.apps }}" | tr ',' '\n' | sed 's/ //g' | grep . | jq -R . | jq -sc .)
+              fi ;;
+          esac
+          echo "apps=$APPS" >> "$GITHUB_OUTPUT"
+          echo "Apps a compilar: $APPS"
+
+  version-check:
+    # En un PR, toda app modificada tiene que subir su versión en app.json.
+    if: github.event_name == 'pull_request' && needs.detect.outputs.apps != '[]'
+    needs: detect
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - shell: bash
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          FAIL=0
+          for app in $(echo '${{ needs.detect.outputs.apps }}' | jq -r '.[]'); do
+            NEW=$(jq -r .version "apps/$app/app.json")
+            OLD=$(git show "$BASE:apps/$app/app.json" 2>/dev/null | jq -r .version || echo "")
+            if [ -n "$OLD" ] && [ "$OLD" = "$NEW" ]; then
+              echo "::error file=apps/$app/app.json::$app cambió pero sigue en v$NEW. Subí la versión y agregá la entrada al CHANGELOG.md."
+              FAIL=1
+            else
+              echo "$app: ${OLD:-nueva} -> $NEW"
+            fi
+            grep -q "## \[$NEW\]" "apps/$app/CHANGELOG.md" \
+              || echo "::warning file=apps/$app/CHANGELOG.md::Falta la sección ## [$NEW]"
+          done
+          exit $FAIL
+
+  build:
+    needs: detect
+    if: needs.detect.outputs.apps != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJson(needs.detect.outputs.apps) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+            apps/${{ matrix.app }}/.work
+          key: pio-${{ matrix.app }}-${{ hashFiles(format('apps/{0}/platformio.ini', matrix.app), format('apps/{0}/app.json', matrix.app), format('apps/{0}/variant/platformio.ini', matrix.app)) }}
+          restore-keys: pio-${{ matrix.app }}-
+
+      - run: pip install --upgrade platformio
+
+      - name: Build
+        id: build
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            SUFFIX=""
+          else
+            SUFFIX="dev.$(git rev-parse --short HEAD)"
+          fi
+          scripts/build-app.sh "${{ matrix.app }}" "$SUFFIX"
+          echo "version=$(jq -r .version dist/${{ matrix.app }}/build-info.json)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.app }}-v${{ steps.build.outputs.version }}
+          path: dist/${{ matrix.app }}/
+          retention-days: 30
+
+      - name: Release
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          APP="${{ matrix.app }}"
+          VERSION="${{ steps.build.outputs.version }}"
+          TAG="$APP-v$VERSION"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::notice::$TAG ya existe; no se publica. Subí la versión en apps/$APP/app.json para sacar un release nuevo."
+            exit 0
+          fi
+          NAME=$(jq -r .displayName "apps/$APP/app.json")
+          awk -v v="$VERSION" '
+            $0 ~ "^## \\[" v "\\]" {on=1; next}
+            on && /^## \[/ {exit}
+            on {print}
+          ' "apps/$APP/CHANGELOG.md" > notes.md
+          [ -s notes.md ] || echo "Build de $APP v$VERSION." > notes.md
+          printf '\n---\nCopiá `%s` a la microSD y abrilo desde M5Launcher (SD → Install).\n' "$APP-v$VERSION.bin" >> notes.md
+          gh release create "$TAG" \
+            --title "$NAME v$VERSION" \
+            --notes-file notes.md \
+            dist/$APP/*.bin dist/$APP/*.sha256 dist/$APP/build-info.json
+
+  sd-bundle:
+    # Junta el último .bin publicado de cada app en un zip listo para la SD.
+    needs: build
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p sd/apps
+          for d in apps/*/; do
+            app=$(basename "$d")
+            [[ "$app" == _* ]] && continue
+            TAG=$(gh release list --limit 200 --json tagName --jq '.[].tagName' \
+                  | grep -E "^$app-v[0-9]" | sort -V | tail -1 || true)
+            [ -z "$TAG" ] && { echo "$app: sin release todavía"; continue; }
+            gh release download "$TAG" --pattern "*.bin" --dir sd/apps
+            echo "$app: $TAG"
+          done
+          ls -la sd/apps
+          (cd sd && zip -r ../sd-card.zip .)
+          gh release view sd-latest >/dev/null 2>&1 \
+            || gh release create sd-latest --title "SD card (último de cada app)" \
+                 --notes "Descomprimí en la raíz de la microSD. Los .bin quedan en /apps." --latest=false
+          gh release upload sd-latest sd-card.zip --clobber

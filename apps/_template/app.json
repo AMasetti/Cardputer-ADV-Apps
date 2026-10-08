@@ -1,0 +1,9 @@
+{
+  "name": "__APP__",
+  "displayName": "__APP__",
+  "version": "0.1.0",
+  "description": "Describí la app.",
+  "target": "cardputer-adv",
+  "builder": "platformio",
+  "env": "cardputer"
+}

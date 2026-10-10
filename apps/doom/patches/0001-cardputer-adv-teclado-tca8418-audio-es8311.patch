@@ -1,0 +1,184 @@
+diff --git a/main/cardputer_doom.cpp b/main/cardputer_doom.cpp
+index 9ef02c0..e8f1285 100644
+--- a/main/cardputer_doom.cpp
++++ b/main/cardputer_doom.cpp
+@@ -82,7 +82,7 @@ uint8_t kb_get_input(const int pinList[])
+ }
+ 
+ 
+-void kb_init(const int output_pins[], const int input_pins[])
++static void kb_init_matrix(const int output_pins[], const int input_pins[])
+ {
+ 
+     for (int j = 0; j<3; j++) 
+@@ -133,7 +133,7 @@ uint8_t keymap[] = {
+ 
+ 
+ char kb_state[14*4];
+-void kb_update_state() {
++static void kb_update_state_matrix() {
+     memset(kb_state, 0, 14*4);
+     for(int row = 0; row < 8; row++) {
+         kb_set_output(kb_output_list, row);
+@@ -148,6 +148,139 @@ void kb_update_state() {
+         }
+     }
+ }
++
++// ---------------------------------------------------------------------------
++// cardputer-adv-apps: soporte para Cardputer-Adv.
++//
++// La Adv no tiene el teclado en una matriz de GPIO: lo lee un TCA8418 por el
++// I2C interno (SDA G8, SCL G9, 0x34), y el parlante pasa por un códec ES8311
++// (0x18) que hay que encender. Se detecta la Adv probando el TCA8418; si no
++// responde se usa la matriz GPIO de la Cardputer original como antes.
++// Secuencias tomadas de M5Cardputer (TCA8418KeyboardReader) y M5Unified
++// (_speaker_enabled_cb_cardputer_adv), ambas MIT (c) M5Stack.
++// ---------------------------------------------------------------------------
++#include <driver/i2c.h>
++
++#define ADV_I2C_PORT   I2C_NUM_0
++#define ADV_I2C_SDA    8
++#define ADV_I2C_SCL    9
++#define TCA8418_ADDR   0x34
++#define ES8311_ADDR    0x18
++
++static bool kb_is_adv = false;
++
++static esp_err_t adv_write_reg(uint8_t addr, uint8_t reg, uint8_t val) {
++    uint8_t buf[2] = {reg, val};
++    return i2c_master_write_to_device(ADV_I2C_PORT, addr, buf, 2, pdMS_TO_TICKS(20));
++}
++
++static uint8_t adv_read_reg(uint8_t addr, uint8_t reg) {
++    uint8_t val = 0;
++    i2c_master_write_read_device(ADV_I2C_PORT, addr, &reg, 1, &val, 1, pdMS_TO_TICKS(20));
++    return val;
++}
++
++static bool adv_i2c_init() {
++    i2c_config_t conf = {};
++    conf.mode = I2C_MODE_MASTER;
++    conf.sda_io_num = ADV_I2C_SDA;
++    conf.scl_io_num = ADV_I2C_SCL;
++    conf.sda_pullup_en = GPIO_PULLUP_ENABLE;
++    conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
++    conf.master.clk_speed = 400000;
++    if (i2c_param_config(ADV_I2C_PORT, &conf) != ESP_OK) return false;
++    if (i2c_driver_install(ADV_I2C_PORT, I2C_MODE_MASTER, 0, 0, 0) != ESP_OK) return false;
++
++    // ¿Hay un TCA8418? (lectura del registro CFG)
++    uint8_t reg = 0x01, val = 0;
++    if (i2c_master_write_read_device(ADV_I2C_PORT, TCA8418_ADDR, &reg, 1, &val, 1, pdMS_TO_TICKS(20)) != ESP_OK) {
++        i2c_driver_delete(ADV_I2C_PORT);
++        return false;
++    }
++    return true;
++}
++
++static void tca8418_init() {
++    // Todos los pines como entrada, con eventos e interrupción por flanco.
++    for (uint8_t r = 0x23; r <= 0x25; r++) adv_write_reg(TCA8418_ADDR, r, 0x00);  // GPIO_DIR
++    for (uint8_t r = 0x20; r <= 0x22; r++) adv_write_reg(TCA8418_ADDR, r, 0xFF);  // GPI_EM
++    for (uint8_t r = 0x26; r <= 0x28; r++) adv_write_reg(TCA8418_ADDR, r, 0x00);  // GPIO_INT_LVL
++    for (uint8_t r = 0x1A; r <= 0x1C; r++) adv_write_reg(TCA8418_ADDR, r, 0xFF);  // GPIO_INT_EN
++    // Matriz de 7 filas x 8 columnas, como M5Cardputer.
++    adv_write_reg(TCA8418_ADDR, 0x1D, 0x7F);  // KP_GPIO_1: filas 0..6
++    adv_write_reg(TCA8418_ADDR, 0x1E, 0xFF);  // KP_GPIO_2: columnas 0..7
++    adv_write_reg(TCA8418_ADDR, 0x1F, 0x00);  // KP_GPIO_3
++    // Vaciar la FIFO de eventos y limpiar flags.
++    for (int i = 0; i < 16 && adv_read_reg(TCA8418_ADDR, 0x04); i++) {}
++    adv_read_reg(TCA8418_ADDR, 0x11);
++    adv_read_reg(TCA8418_ADDR, 0x12);
++    adv_read_reg(TCA8418_ADDR, 0x13);
++    adv_write_reg(TCA8418_ADDR, 0x02, 0x03);  // INT_STAT
++    // Habilitar eventos de teclado (KE_IEN | GPI_IEN). Se lee por polling.
++    adv_write_reg(TCA8418_ADDR, 0x01, adv_read_reg(TCA8418_ADDR, 0x01) | 0x03);
++}
++
++static void es8311_init() {
++    static const uint8_t regs[][2] = {
++        {0x00, 0x80},  // RESET / CSM power on
++        {0x01, 0xB5},  // CLOCK_MANAGER: MCLK = BCLK
++        {0x02, 0x18},  // CLOCK_MANAGER: MULT_PRE = 3
++        {0x0D, 0x01},  // SYSTEM: power up analog
++        {0x12, 0x00},  // SYSTEM: power up DAC
++        {0x13, 0x10},  // SYSTEM: enable output to HP drive
++        {0x32, 0xBF},  // DAC volume 0 dB
++        {0x37, 0x08},  // bypass DAC equalizer
++    };
++    for (auto &r : regs) {
++        if (adv_write_reg(ES8311_ADDR, r[0], r[1]) != ESP_OK) {
++            printf("ES8311 no responde (reg 0x%02x)\n", r[0]);
++            return;
++        }
++    }
++}
++
++// Estado de teclas de la Adv: el TCA8418 entrega eventos press/release.
++static char kb_state_adv[14*4];
++
++static void kb_update_state_adv() {
++    uint8_t count = adv_read_reg(TCA8418_ADDR, 0x03) & 0x0F;  // KEY_LCK_EC
++    while (count--) {
++        uint8_t ev = adv_read_reg(TCA8418_ADDR, 0x04);         // KEY_EVENT_A
++        uint8_t code = ev & 0x7F;
++        if (code == 0 || code > 80) continue;                    // 0x5B.. son GPIO
++        uint8_t raw_row = (code - 1) / 10;
++        uint8_t raw_col = (code - 1) % 10;
++        // Misma reubicación que M5Cardputer para igualar la grilla 4x14.
++        uint8_t col = raw_row * 2 + (raw_col > 3 ? 1 : 0);
++        uint8_t row = raw_col % 4;
++        if (row < 4 && col < 14) kb_state_adv[row*14 + col] = (ev & 0x80) ? 1 : 0;
++    }
++    adv_write_reg(TCA8418_ADDR, 0x02, 0x01);                     // limpiar K_INT
++}
++
++void kb_init(const int output_pins[], const int input_pins[])
++{
++    kb_is_adv = adv_i2c_init();
++    if (kb_is_adv) {
++        printf("Cardputer-Adv: teclado TCA8418 + audio ES8311\n");
++        memset(kb_state_adv, 0, sizeof(kb_state_adv));
++        tca8418_init();
++        es8311_init();
++    } else {
++        printf("Cardputer original: teclado por matriz GPIO\n");
++        kb_init_matrix(output_pins, input_pins);
++    }
++}
++
++void kb_update_state() {
++    if (kb_is_adv) {
++        kb_update_state_adv();
++        memcpy(kb_state, kb_state_adv, 14*4);
++    } else {
++        kb_update_state_matrix();
++    }
++}
++
+ #include "common_define.h"
+ void check_evts() {
+ 
+diff --git a/main/doom/source/doom_iwad.c b/main/doom/source/doom_iwad.c
+index 9eea6c0..9b401f2 100644
+--- a/main/doom/source/doom_iwad.c
++++ b/main/doom/source/doom_iwad.c
+@@ -1,12 +1,10 @@
+ #pragma GCC optimize ("-O0")
+ #include "doom_iwad.h"
+ 
+-//Uncomment which edition you want to compile
+-#include "iwad/doom1.c"
+-//#include "iwad/doomu.c"
+-//#include "iwad/doom2.c"
+-//#include "iwad/tnt.c"
+-//#include "iwad/plutonia.c"
+-//#include "iwad/sigil.c"
++// cardputer-adv-apps: no se embebe ningún IWAD en el firmware. El WAD
++// (convertido con wad_converter) se carga desde la microSD vía mmap, así que
++// iwad/doom1.c (el DOOM1.WAD shareware de id, que no es GPL) no se compila
++// ni se redistribuye. doom1.c definía este puntero; ahora vive acá.
++unsigned char * doom_iwad;
+ 
+ unsigned int doom_iwad_len;

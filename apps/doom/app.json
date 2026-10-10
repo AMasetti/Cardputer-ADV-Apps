@@ -1,0 +1,14 @@
+{
+  "name": "doom",
+  "displayName": "Doom",
+  "version": "0.1.0",
+  "description": "Doom (port de GBADoom/PrBoom por romalik) para Cardputer y Cardputer-Adv. Carga el WAD desde la microSD.",
+  "target": "cardputer-adv",
+  "builder": "custom",
+  "license": "GPL-2.0-or-later",
+  "upstream": {
+    "repo": "https://github.com/romalik/m5cardputer_doom",
+    "ref": "d8de0d1847d335f9da74109fe4e1be54ce3916ac",
+    "idfImage": "espressif/idf:v4.4.6"
+  }
+}

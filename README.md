@@ -30,8 +30,11 @@ docs/
 | App | Qué hace |
 |---|---|
 | `mp3-player` | Reproduce los `.mp3` de `/music` en la SD. `;` `.` lista · `enter` play · `space` pausa · `,` `/` anterior/siguiente · `-` `=` volumen · `s` shuffle |
+| `doom` | Doom (port de [romalik](https://github.com/romalik/m5cardputer_doom) sobre GBADoom/PrBoom), con soporte para el teclado y el audio de la Adv. Necesita el WAD convertido en la SD. **GPL-2.0-or-later**, ver [apps/doom](apps/doom/README.md) |
 | `ekoparty-badge` | Logo de la Ekoparty 22 y QR a AMasetti.com. Cualquier tecla alterna a QR a pantalla completa |
 | `meshtastic-ra02` | Meshtastic con un RA-02 (SX1278, 433 MHz) en el header EXT 14P, en lugar del Cap LoRa-1262. Cableado en [docs/hardware.md](docs/hardware.md) |
+
+Cada app puede tener su propia licencia: si una carpeta de `apps/` trae un `LICENSE`, ese aplica a esa app (por ejemplo, `doom` es GPL-2.0-or-later).
 
 ## Versionado
 

@@ -12,6 +12,7 @@
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-6.1.19-F5822A?logo=platformio&logoColor=white)](https://platformio.org/)
 [![Arduino](https://img.shields.io/badge/Arduino-framework-00878F?logo=arduino&logoColor=white)](https://docs.espressif.com/projects/arduino-esp32/)
 [![M5Launcher](https://img.shields.io/badge/runs%20on-M5Launcher-6f42c1)](https://github.com/bmorcelli/Launcher)
+[![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial%20%2B%20GPL%20per%20app-lightgrey)](#license)
 
 </div>
 
@@ -69,7 +70,7 @@ docs/
 | 🪪 | `ekoparty-badge` | Badge | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/ekoparty-badge-v0.1.0) | Unofficial attendee badge for the Ekoparty 22 security conference: shows the event logo and a QR code to AMasetti.com, so other attendees can scan it to reach my site. Any key toggles a full-screen QR. [See the note below](#ekoparty-badge) |
 | 📡 | `meshtastic-ra02` | Firmware | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/meshtastic-ra02-v0.1.0) | Meshtastic with an RA-02 (SX1278, 433 MHz) on the EXT 14P header instead of the LoRa-1262 Cap. Wiring in [docs/hardware.md](docs/hardware.md) |
 
-Each app can have its own license: if a folder in `apps/` includes a `LICENSE`, it applies to that app (for example, `doom` is GPL-2.0-or-later).
+Licenses differ per app, see [License](#license).
 
 ### Tetrix controls
 
@@ -183,3 +184,22 @@ Enable them after cloning:
 ```bash
 git config core.hooksPath .githooks
 ```
+
+## License
+
+My own work is **free for personal and other noncommercial use, but can't be sold or used to make money**. Apps built on someone else's open-source code keep their original license, to respect their authors.
+
+| Part | License | Why |
+|---|---|---|
+| `snake`, `tetrix`, `shell-rc`, `ekoparty-badge`, `scripts/`, CI, docs | [PolyForm Noncommercial 1.0.0](LICENSE) | My own code |
+| `doom` | [GPL-2.0-or-later](apps/doom/LICENSE) | Based on id Software's Doom, PrBoom, GBADoom and romalik's port |
+| `mp3-player` | [GPL-3.0](apps/mp3-player/LICENSE) | Links [ESP8266Audio](https://github.com/earlephilhower/ESP8266Audio), which is GPL-3.0 |
+| `meshtastic-ra02` | [GPL-3.0](apps/meshtastic-ra02/LICENSE) | Built from the [Meshtastic firmware](https://github.com/meshtastic/firmware), which is GPL-3.0 |
+
+**PolyForm Noncommercial** lets anyone use, study, modify and share the code for personal, hobby, educational, research or other noncommercial purposes, as long as they keep the license and the `Required Notice` line. Selling it, or using it to make money, is not allowed without my written permission. Get in touch through [amasetti.com](https://amasetti.com) if you'd like to use it commercially.
+
+The GPL apps can be used, modified and redistributed under their GPL terms, including commercially. The GPL doesn't allow adding a noncommercial restriction on top of it. Their source code is this repository plus the upstream version pinned in each `app.json`.
+
+Libraries compiled into the firmware keep their own licenses: M5Cardputer and M5GFX (MIT) and NimBLE-Arduino (Apache-2.0).
+
+Third-party names and logos are not covered by these licenses: the Ekoparty logo belongs to Ekoparty Security Conference, and "Doom" is a trademark of id Software. The Doom WAD files are not included.

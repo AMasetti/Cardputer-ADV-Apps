@@ -76,3 +76,13 @@ scripts/new-app.sh mi-app
 Para mejorar una app: tocá su carpeta, subí `version` en `app.json`, agregá la sección al `CHANGELOG.md` y abrí un PR.
 
 Para actualizar Meshtastic: cambiá `upstream.ref` en `apps/meshtastic-ra02/app.json` y subí la versión. Si upstream cambió la variante de Cardputer-Adv, compará con `variant/variant.h`.
+
+## Git hooks
+
+Los commits no llevan atribución a AI/agentes (trailers `Co-authored-by` de una AI, `Generated with ...`). `commit-msg` lo frena al commitear y `pre-push` revisa todos los commits antes de pushear.
+
+Activalos después de clonar:
+
+```bash
+git config core.hooksPath .githooks
+```

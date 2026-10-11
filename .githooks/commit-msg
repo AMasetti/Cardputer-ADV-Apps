@@ -1,0 +1,4 @@
+#!/bin/sh
+# Rechaza commits cuyo mensaje atribuya autoría a una AI/agente.
+hooks_dir=$(dirname "$0")
+"$hooks_dir/check-ai-attribution.sh" "el mensaje de commit" < "$1"

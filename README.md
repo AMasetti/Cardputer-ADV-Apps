@@ -1,89 +1,119 @@
 # cardputer-apps
 
-Monorepo de apps para la **M5Stack Cardputer-Adv**. Cada carpeta en `apps/` es una app con su código fuente y su propia versión. GitHub Actions compila solo las apps que cambiaron y publica un `.bin` por versión, listo para copiar a la microSD y abrir con **M5Launcher**.
+App monorepo for the **M5Stack Cardputer-Adv**. Each folder in `apps/` is one app with its own source code and version. GitHub Actions builds only the apps that changed and publishes one `.bin` per version, ready to copy to the microSD card and launch with **M5Launcher**.
 
 ```
 apps/
-  mp3-player/          # app propia (PlatformIO)
-    app.json           # nombre, versión, builder
+  mp3-player/          # own app (PlatformIO)
+    app.json           # name, version, builder
     CHANGELOG.md
     platformio.ini
     src/main.cpp
-  meshtastic-ra02/     # firmware upstream + variante propia
-    app.json           # versión + ref de meshtastic/firmware
+  shell-rc/            # own app with extra libraries (NimBLE)
+  meshtastic-ra02/     # upstream firmware + own variant
+    app.json           # version + meshtastic/firmware ref
     CHANGELOG.md
-    build.sh           # clona upstream, copia variant/, compila
+    build.sh           # clones upstream, copies variant/, builds
     variant/           # variant.h, pins_arduino.h, platformio.ini
-    patches/           # (opcional) *.patch sobre upstream
-  _template/           # base para apps nuevas
+    patches/           # (optional) *.patch applied on upstream
+  _template/           # starting point for new apps
 scripts/
-  build-app.sh         # compila una app -> dist/<app>/<app>-v<ver>.bin
-  changed-apps.sh      # qué apps cambiaron entre dos commits
-  new-app.sh           # crea una app desde _template
+  build-app.sh         # builds one app -> dist/<app>/<app>-v<ver>.bin
+  changed-apps.sh      # which apps changed between two commits
+  new-app.sh           # creates an app from _template
 docs/
-  hardware.md          # cableado RA-02, SD, sensores I2C
+  hardware.md          # RA-02, SD and I2C sensor wiring
+.githooks/             # commit-msg and pre-push hooks
 .github/workflows/build.yml
 ```
 
 ## Apps
 
-| App | Qué hace |
+| App | What it does |
 |---|---|
-| `mp3-player` | Reproduce los `.mp3` de `/music` en la SD. `;` `.` lista · `enter` play · `space` pausa · `,` `/` anterior/siguiente · `-` `=` volumen · `s` shuffle |
-| `doom` | Doom (port de [romalik](https://github.com/romalik/m5cardputer_doom) sobre GBADoom/PrBoom), con soporte para el teclado y el audio de la Adv. Necesita el WAD convertido en la SD. **GPL-2.0-or-later**, ver [apps/doom](apps/doom/README.md) |
-| `snake` | Snake clásico. `;` `.` `,` `/` (o WASD) mover · `enter` jugar · `space` pausa · `m` sonido. Guarda el récord |
-| `tetrix` | Tetrix lateral: el tablero de 10×20 va acostado y las piezas caen hacia la derecha. `;` `.` mover · `,` rotar (`z` al revés) · `/` bajar · `space` soltar · `p` pausa · `m` sonido. Guarda el récord |
-| `shell-rc` | Control por BLE de los autos Shell Motorsport, elegís generación: 2024 (`QCAR-*`, 4 velocidades) o 2025 (`SL-*`, luces, turbo, donut, modo y batería). `;` `.` `,` `/` manejar · `del` desconectar. Protocolos de [shell-motorsport-rc-lib](https://github.com/AMasetti/shell-motorsport-rc-lib) y [-2025](https://github.com/AMasetti/shell-motorsport-rc-lib-2025) |
-| `ekoparty-badge` | Logo de la Ekoparty 22 y QR a AMasetti.com. Cualquier tecla alterna a QR a pantalla completa |
-| `meshtastic-ra02` | Meshtastic con un RA-02 (SX1278, 433 MHz) en el header EXT 14P, en lugar del Cap LoRa-1262. Cableado en [docs/hardware.md](docs/hardware.md) |
+| `mp3-player` | Plays the `.mp3` files in `/music` on the SD card. `;` `.` list · `enter` play · `space` pause · `,` `/` previous/next · `-` `=` volume · `s` shuffle |
+| `doom` | Doom ([romalik](https://github.com/romalik/m5cardputer_doom)'s port of GBADoom/PrBoom), with support for the Adv keyboard and audio. Needs the converted WAD on the SD card. **GPL-2.0-or-later**, see [apps/doom](apps/doom/README.md) |
+| `snake` | Classic Snake. `;` `.` `,` `/` (or WASD) move · `enter` play · `space` pause · `m` sound. Keeps your high score |
+| `tetrix` | Sideways Tetrix: the 10×20 board lies on its side and pieces fall to the right, using the full width of the screen. `;` `.` move · `,` rotate (`z` counter-clockwise) · `/` soft drop · `space` hard drop · `p` pause · `m` sound. Ghost piece, 7-bag, levels and high score |
+| `shell-rc` | BLE remote control for Shell Motorsport RC cars. Pick the generation: 2024 (`QCAR-*`, 4 speeds) or 2025 (`SL-*`, lights, turbo, donut, drive mode and battery level). `;` `.` `,` `/` drive · `del` disconnect. Protocols from [shell-motorsport-rc-lib](https://github.com/AMasetti/shell-motorsport-rc-lib) and [shell-motorsport-rc-lib-2025](https://github.com/AMasetti/shell-motorsport-rc-lib-2025) |
+| `ekoparty-badge` | Ekoparty 22 logo and a QR code to AMasetti.com. Any key toggles a full-screen QR |
+| `meshtastic-ra02` | Meshtastic with an RA-02 (SX1278, 433 MHz) on the EXT 14P header instead of the LoRa-1262 Cap. Wiring in [docs/hardware.md](docs/hardware.md) |
 
-Cada app puede tener su propia licencia: si una carpeta de `apps/` trae un `LICENSE`, ese aplica a esa app (por ejemplo, `doom` es GPL-2.0-or-later).
+Each app can have its own license: if a folder in `apps/` includes a `LICENSE`, it applies to that app (for example, `doom` is GPL-2.0-or-later).
 
-## Versionado
+### Tetrix controls
 
-- La versión de cada app vive en su `app.json` (semver) y se documenta en su `CHANGELOG.md` con una sección `## [x.y.z]`.
-- **PR**: compila las apps tocadas como `<app>-v<ver>-dev.<sha>.bin` (artifact del run) y **falla si una app cambió sin subir la versión**.
-- **Push a `main`**: compila las apps tocadas y crea el release `<app>-v<ver>` con el `.bin`, su `sha256`, `build-info.json` y las notas del CHANGELOG. Si el tag ya existe, no publica nada.
-- Además actualiza el release **`sd-latest`** con `sd-card.zip`: el último `.bin` de cada app en `/apps`, para descomprimir directo en la SD.
-- **Actions → build-apps → Run workflow** recompila todas (`all`) o una lista (`mp3-player,meshtastic-ra02`).
+| Key | Action |
+|---|---|
+| `;` `.` (or `w` `s`) | move up / down (auto-repeats while held) |
+| `,` (or `a`, `x`) / `z` | rotate clockwise / counter-clockwise |
+| `/` (or `d`) | soft drop |
+| `space` / `enter` | hard drop |
+| `p` / `m` | pause / sound on-off |
 
-Si cambia algo en `scripts/` o en el workflow, se recompilan todas las apps.
+Clearing lines scores 100/300/500/800 × level, and the level goes up every 10 lines.
 
-## Cargar en la Cardputer
+### Shell RC usage
 
-1. Instalá M5Launcher una vez (M5Burner o el flasher web del proyecto de bmorcelli).
-2. Bajá el `.bin` del release, o `sd-card.zip` de `sd-latest`, y copialo a la microSD.
-3. En el Launcher: **SD → elegí el `.bin` → Install**. Queda como app por defecto hasta que instales otra; para volver al menú, encendé apretando una tecla durante el splash.
+1. Pick the generation with `;` `.` (or `1` `2`) and press `enter`. The last choice is remembered.
+2. The app scans over BLE and lists nearby cars sorted by signal strength. `enter` connects, `r` scans again, `del` goes back.
+3. Drive by holding `;` `.` `,` `/` (forward, back, left, right; WASD also works). Commands are sent every 30 ms, since the cars expect a continuous stream.
+   - **2024:** `1`–`4` sets the speed.
+   - **2025:** `l` lights, `t` turbo, `o` donut, `m` drive mode 1/2. Battery level is shown on screen.
+4. `del` stops the car and disconnects. If the connection drops, the app goes back to the car list.
 
-Los `.bin` son **solo la partición de app** (`firmware.bin`), no el merged. Así no pisan el bootloader ni el Launcher. No los flashees por USB en offset 0x0.
+| Generation | BLE name | Command |
+|---|---|---|
+| 2024 | `QCAR-*` | 16 bytes, AES-128 ECB: `[0, 'C','T','L', fwd, back, left, right, 0, speed, 0…]` |
+| 2025 | `SL-*` | 8 plain bytes: `[mode, fwd, back, left, right, lights, turbo, donut]`, battery on service `0x180F` |
 
-> Tamaño: Meshtastic pesa bastante. Si el Launcher dice que no entra, cambiá el esquema de particiones en sus opciones. `build-app.sh` avisa si un binario pasa ~3.2 MB.
+## Versioning
 
-## Desarrollo local
+- Each app's version lives in its `app.json` (semver) and is documented in its `CHANGELOG.md` under a `## [x.y.z]` section.
+- **Pull request**: builds the touched apps as `<app>-v<ver>-dev.<sha>.bin` (run artifact) and **fails if an app changed without a version bump**.
+- **Push to `main`**: builds the touched apps and creates the `<app>-v<ver>` release with the `.bin`, its `sha256`, `build-info.json` and the CHANGELOG notes. If the tag already exists, nothing is published.
+- It also updates the **`sd-latest`** release with `sd-card.zip`: the latest `.bin` of every app under `/apps`, ready to unzip onto the SD card.
+- **Actions → build-apps → Run workflow** rebuilds every app (`all`) or a list (`mp3-player,meshtastic-ra02`).
+
+If anything in `scripts/` or the workflow changes, every app is rebuilt.
+
+## Installing on the Cardputer
+
+1. Install M5Launcher once (M5Burner or the web flasher from bmorcelli's project).
+2. Download the `.bin` from the release, or `sd-card.zip` from `sd-latest`, and copy it to the microSD card.
+3. In the Launcher: **SD → pick the `.bin` → Install**. It stays as the default app until you install another one; to get back to the menu, power on while pressing a key during the splash screen.
+
+The `.bin` files are **only the app partition** (`firmware.bin`), not the merged image, so they don't overwrite the bootloader or the Launcher. Don't flash them over USB at offset 0x0.
+
+> Size: Meshtastic is quite large. If the Launcher says it doesn't fit, change the partition scheme in its settings. `build-app.sh` warns when a binary goes over ~3.2 MB.
+
+## Local development
 
 ```bash
-pip install platformio
+pip install platformio==6.1.19               # same version the CI pins
 scripts/build-app.sh mp3-player              # -> dist/mp3-player/mp3-player-v0.1.0.bin
-scripts/build-app.sh meshtastic-ra02 dev.1   # clona upstream en apps/meshtastic-ra02/.work
-pio run -d apps/mp3-player -t upload         # flashea por USB directo (pisa el Launcher)
+scripts/build-app.sh meshtastic-ra02 dev.1   # clones upstream into apps/meshtastic-ra02/.work
+pio run -d apps/mp3-player -t upload         # flashes over USB directly (overwrites the Launcher)
 ```
 
-## App nueva
+`build-app.sh` uses GNU `stat` and `sha256sum`, as on the CI runner. On macOS, either install coreutils or build with `pio run -d apps/<app> -e cardputer` directly.
+
+## New app
 
 ```bash
-scripts/new-app.sh mi-app
-# editá apps/mi-app/src/main.cpp, push -> CI publica mi-app-v0.1.0
+scripts/new-app.sh my-app
+# edit apps/my-app/src/main.cpp, push -> CI publishes my-app-v0.1.0
 ```
 
-Para mejorar una app: tocá su carpeta, subí `version` en `app.json`, agregá la sección al `CHANGELOG.md` y abrí un PR.
+To improve an app: change its folder, bump `version` in `app.json`, add the section to `CHANGELOG.md` and open a PR.
 
-Para actualizar Meshtastic: cambiá `upstream.ref` en `apps/meshtastic-ra02/app.json` y subí la versión. Si upstream cambió la variante de Cardputer-Adv, compará con `variant/variant.h`.
+To update Meshtastic: change `upstream.ref` in `apps/meshtastic-ra02/app.json` and bump the version. If upstream changed the Cardputer-Adv variant, compare it with `variant/variant.h`.
 
 ## Git hooks
 
-Los commits no llevan atribución a AI/agentes (trailers `Co-authored-by` de una AI, `Generated with ...`). `commit-msg` lo frena al commitear y `pre-push` revisa todos los commits antes de pushear.
+Commits must not carry AI/agent attribution (AI `Co-authored-by` trailers, `Generated with ...` lines). `commit-msg` blocks it when committing and `pre-push` checks every commit before pushing.
 
-Activalos después de clonar:
+Enable them after cloning:
 
 ```bash
 git config core.hooksPath .githooks

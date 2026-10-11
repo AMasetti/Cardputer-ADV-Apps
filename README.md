@@ -66,7 +66,7 @@ docs/
 | 🐍 | `snake` | Game | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/snake-v0.1.0) | Classic Snake. `;` `.` `,` `/` (or WASD) move · `enter` play · `space` pause · `m` sound. Keeps your high score |
 | 🧱 | `tetrix` | Game | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/tetrix-v0.1.0) | Sideways Tetrix: the 10×20 board lies on its side and pieces fall to the right, using the full width of the screen. `;` `.` move · `,` rotate (`z` counter-clockwise) · `/` soft drop · `space` hard drop · `p` pause · `m` sound. Ghost piece, 7-bag, levels and high score |
 | 🏎️ | `shell-rc` | BLE remote | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/shell-rc-v0.1.0) | BLE remote control for Shell Motorsport RC cars. Pick the generation: 2024 (`QCAR-*`, 4 speeds) or 2025 (`SL-*`, lights, turbo, donut, drive mode and battery level). `;` `.` `,` `/` drive · `del` disconnect. Protocols from [shell-motorsport-rc-lib](https://github.com/AMasetti/shell-motorsport-rc-lib) and [shell-motorsport-rc-lib-2025](https://github.com/AMasetti/shell-motorsport-rc-lib-2025) |
-| 🪪 | `ekoparty-badge` | Badge | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/ekoparty-badge-v0.1.0) | Ekoparty 22 logo and a QR code to AMasetti.com. Any key toggles a full-screen QR |
+| 🪪 | `ekoparty-badge` | Badge | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/ekoparty-badge-v0.1.0) | Unofficial attendee badge for the Ekoparty 22 security conference: shows the event logo and a QR code to AMasetti.com, so other attendees can scan it to reach my site. Any key toggles a full-screen QR. [See the note below](#ekoparty-badge) |
 | 📡 | `meshtastic-ra02` | Firmware | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/meshtastic-ra02-v0.1.0) | Meshtastic with an RA-02 (SX1278, 433 MHz) on the EXT 14P header instead of the LoRa-1262 Cap. Wiring in [docs/hardware.md](docs/hardware.md) |
 
 Each app can have its own license: if a folder in `apps/` includes a `LICENSE`, it applies to that app (for example, `doom` is GPL-2.0-or-later).
@@ -114,6 +114,12 @@ sequenceDiagram
 |---|---|---|
 | 2024 | `QCAR-*` | 16 bytes, AES-128 ECB: `[0, 'C','T','L', fwd, back, left, right, 0, speed, 0…]` |
 | 2025 | `SL-*` | 8 plain bytes: `[mode, fwd, back, left, right, lights, turbo, donut]`, battery on service `0x180F` |
+
+### Ekoparty badge
+
+`ekoparty-badge` is a personal, non-commercial fan project: a name badge to wear at [Ekoparty](https://ekoparty.org/) that turns the Cardputer into a conference badge and shares a QR code to my website.
+
+The Ekoparty name and logo (`apps/ekoparty-badge/assets/ekoparty22.jpg` and the `src/logo.h` generated from it) belong to **Ekoparty Security Conference** and are used here only to identify the event. This project is not affiliated with, sponsored by or endorsed by Ekoparty. If you reuse the app, replace the logo with your own image (`tools/img2h.py` converts it).
 
 ## Versioning
 

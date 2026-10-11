@@ -1,6 +1,36 @@
-# cardputer-apps
+<div align="center">
 
-App monorepo for the **M5Stack Cardputer-Adv**. Each folder in `apps/` is one app with its own source code and version. GitHub Actions builds only the apps that changed and publishes one `.bin` per version, ready to copy to the microSD card and launch with **M5Launcher**.
+# Cardputer Apps
+
+**Games, tools and firmware for the M5Stack Cardputer-Adv, ready to launch from the SD card.**
+
+[![Build](https://github.com/AMasetti/Cardputer-ADV-Apps/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/AMasetti/Cardputer-ADV-Apps/actions/workflows/build.yml)
+[![SD bundle](https://img.shields.io/badge/download-sd--card.zip-2ea44f?logo=github)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/sd-latest)
+<br>
+[![Device](https://img.shields.io/badge/M5Stack-Cardputer--Adv-ff6a00)](https://docs.m5stack.com/)
+[![ESP32-S3](https://img.shields.io/badge/ESP32--S3-E7352C?logo=espressif&logoColor=white)](https://www.espressif.com/en/products/socs/esp32-s3)
+[![PlatformIO](https://img.shields.io/badge/PlatformIO-6.1.19-F5822A?logo=platformio&logoColor=white)](https://platformio.org/)
+[![Arduino](https://img.shields.io/badge/Arduino-framework-00878F?logo=arduino&logoColor=white)](https://docs.espressif.com/projects/arduino-esp32/)
+[![M5Launcher](https://img.shields.io/badge/runs%20on-M5Launcher-6f42c1)](https://github.com/bmorcelli/Launcher)
+
+</div>
+
+---
+
+Each folder in `apps/` is one app with its own source code and version. GitHub Actions builds only the apps that changed and publishes one `.bin` per version, ready to copy to the microSD card and launch with **M5Launcher**.
+
+```mermaid
+flowchart LR
+    A["apps/app<br/>source + app.json"] -->|push to main| B["GitHub Actions<br/>build-apps"]
+    B --> C["Release per app<br/>app-vX.Y.Z.bin"]
+    B --> D["sd-latest<br/>sd-card.zip"]
+    C --> E[("microSD")]
+    D --> E
+    E --> F["M5Launcher<br/>SD → Install"]
+    F --> G["Cardputer-Adv"]
+```
+
+## Repository layout
 
 ```
 apps/
@@ -29,15 +59,15 @@ docs/
 
 ## Apps
 
-| App | What it does |
-|---|---|
-| `mp3-player` | Plays the `.mp3` files in `/music` on the SD card. `;` `.` list · `enter` play · `space` pause · `,` `/` previous/next · `-` `=` volume · `s` shuffle |
-| `doom` | Doom ([romalik](https://github.com/romalik/m5cardputer_doom)'s port of GBADoom/PrBoom), with support for the Adv keyboard and audio. Needs the converted WAD on the SD card. **GPL-2.0-or-later**, see [apps/doom](apps/doom/README.md) |
-| `snake` | Classic Snake. `;` `.` `,` `/` (or WASD) move · `enter` play · `space` pause · `m` sound. Keeps your high score |
-| `tetrix` | Sideways Tetrix: the 10×20 board lies on its side and pieces fall to the right, using the full width of the screen. `;` `.` move · `,` rotate (`z` counter-clockwise) · `/` soft drop · `space` hard drop · `p` pause · `m` sound. Ghost piece, 7-bag, levels and high score |
-| `shell-rc` | BLE remote control for Shell Motorsport RC cars. Pick the generation: 2024 (`QCAR-*`, 4 speeds) or 2025 (`SL-*`, lights, turbo, donut, drive mode and battery level). `;` `.` `,` `/` drive · `del` disconnect. Protocols from [shell-motorsport-rc-lib](https://github.com/AMasetti/shell-motorsport-rc-lib) and [shell-motorsport-rc-lib-2025](https://github.com/AMasetti/shell-motorsport-rc-lib-2025) |
-| `ekoparty-badge` | Ekoparty 22 logo and a QR code to AMasetti.com. Any key toggles a full-screen QR |
-| `meshtastic-ra02` | Meshtastic with an RA-02 (SX1278, 433 MHz) on the EXT 14P header instead of the LoRa-1262 Cap. Wiring in [docs/hardware.md](docs/hardware.md) |
+| | App | Type | Version | What it does |
+|---|---|---|---|---|
+| 🎵 | `mp3-player` | Media | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/mp3-player-v0.1.0) | Plays the `.mp3` files in `/music` on the SD card. `;` `.` list · `enter` play · `space` pause · `,` `/` previous/next · `-` `=` volume · `s` shuffle |
+| 👹 | `doom` | Game | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/doom-v0.1.0) | Doom ([romalik](https://github.com/romalik/m5cardputer_doom)'s port of GBADoom/PrBoom), with support for the Adv keyboard and audio. Needs the converted WAD on the SD card. **GPL-2.0-or-later**, see [apps/doom](apps/doom/README.md) |
+| 🐍 | `snake` | Game | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/snake-v0.1.0) | Classic Snake. `;` `.` `,` `/` (or WASD) move · `enter` play · `space` pause · `m` sound. Keeps your high score |
+| 🧱 | `tetrix` | Game | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/tetrix-v0.1.0) | Sideways Tetrix: the 10×20 board lies on its side and pieces fall to the right, using the full width of the screen. `;` `.` move · `,` rotate (`z` counter-clockwise) · `/` soft drop · `space` hard drop · `p` pause · `m` sound. Ghost piece, 7-bag, levels and high score |
+| 🏎️ | `shell-rc` | BLE remote | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/shell-rc-v0.1.0) | BLE remote control for Shell Motorsport RC cars. Pick the generation: 2024 (`QCAR-*`, 4 speeds) or 2025 (`SL-*`, lights, turbo, donut, drive mode and battery level). `;` `.` `,` `/` drive · `del` disconnect. Protocols from [shell-motorsport-rc-lib](https://github.com/AMasetti/shell-motorsport-rc-lib) and [shell-motorsport-rc-lib-2025](https://github.com/AMasetti/shell-motorsport-rc-lib-2025) |
+| 🪪 | `ekoparty-badge` | Badge | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/ekoparty-badge-v0.1.0) | Ekoparty 22 logo and a QR code to AMasetti.com. Any key toggles a full-screen QR |
+| 📡 | `meshtastic-ra02` | Firmware | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/meshtastic-ra02-v0.1.0) | Meshtastic with an RA-02 (SX1278, 433 MHz) on the EXT 14P header instead of the LoRa-1262 Cap. Wiring in [docs/hardware.md](docs/hardware.md) |
 
 Each app can have its own license: if a folder in `apps/` includes a `LICENSE`, it applies to that app (for example, `doom` is GPL-2.0-or-later).
 
@@ -62,6 +92,24 @@ Clearing lines scores 100/300/500/800 × level, and the level goes up every 10 l
    - **2025:** `l` lights, `t` turbo, `o` donut, `m` drive mode 1/2. Battery level is shown on screen.
 4. `del` stops the car and disconnects. If the connection drops, the app goes back to the car list.
 
+```mermaid
+sequenceDiagram
+    participant U as You
+    participant C as Cardputer
+    participant R as Shell car
+    U->>C: Pick generation (2024 / 2025)
+    C->>R: BLE scan (QCAR-* or SL-*)
+    R-->>C: Advertising + RSSI
+    U->>C: enter on a car
+    C->>R: Connect, find write characteristic
+    loop every 30 ms while connected
+        C->>R: Drive command (keys held)
+    end
+    R-->>C: Battery level (2025)
+    U->>C: del
+    C->>R: Stop command, disconnect
+```
+
 | Generation | BLE name | Command |
 |---|---|---|
 | 2024 | `QCAR-*` | 16 bytes, AES-128 ECB: `[0, 'C','T','L', fwd, back, left, right, 0, speed, 0…]` |
@@ -73,6 +121,17 @@ Clearing lines scores 100/300/500/800 × level, and the level goes up every 10 l
 - **Pull request**: builds the touched apps as `<app>-v<ver>-dev.<sha>.bin` (run artifact) and **fails if an app changed without a version bump**.
 - **Push to `main`**: builds the touched apps and creates the `<app>-v<ver>` release with the `.bin`, its `sha256`, `build-info.json` and the CHANGELOG notes. If the tag already exists, nothing is published.
 - It also updates the **`sd-latest`** release with `sd-card.zip`: the latest `.bin` of every app under `/apps`, ready to unzip onto the SD card.
+```mermaid
+flowchart TD
+    P["Pull request"] --> PC{"App changed<br/>without version bump?"}
+    PC -->|yes| PF["❌ CI fails"]
+    PC -->|no| PD["Dev build<br/>app-vX.Y.Z-dev.sha.bin<br/>(run artifact)"]
+    M["Push to main"] --> MT{"Tag app-vX.Y.Z<br/>already exists?"}
+    MT -->|yes| MS["Nothing published"]
+    MT -->|no| MR["GitHub release<br/>.bin + sha256 + build-info.json<br/>+ CHANGELOG notes"]
+    MR --> SD["Update sd-latest<br/>sd-card.zip"]
+```
+
 - **Actions → build-apps → Run workflow** rebuilds every app (`all`) or a list (`mp3-player,meshtastic-ra02`).
 
 If anything in `scripts/` or the workflow changes, every app is rebuilt.

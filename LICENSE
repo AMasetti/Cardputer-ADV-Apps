@@ -1,8 +1,8 @@
 Required Notice: Copyright (c) 2026 Augusto Masetti (https://amasetti.com)
 
 Scope: this license covers everything in this repository except the app
-folders that include their own LICENSE file (apps/doom, apps/mp3-player and
-apps/meshtastic-ra02). Those keep the license of their original authors.
+folders that include their own LICENSE file (apps/doom, apps/mp3-player,
+apps/meshtastic-ra02 and apps/tv-b-gone). Those keep the license of their original authors.
 Third-party names and logos (such as the Ekoparty logo in
 apps/ekoparty-badge/assets and the src/logo.h generated from it) are not
 covered by any license here.

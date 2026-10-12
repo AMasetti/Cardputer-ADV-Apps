@@ -12,7 +12,7 @@
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-6.1.19-F5822A?logo=platformio&logoColor=white)](https://platformio.org/)
 [![Arduino](https://img.shields.io/badge/Arduino-framework-00878F?logo=arduino&logoColor=white)](https://docs.espressif.com/projects/arduino-esp32/)
 [![M5Launcher](https://img.shields.io/badge/runs%20on-M5Launcher-6f42c1)](https://github.com/bmorcelli/Launcher)
-[![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial%20%2B%20GPL%20per%20app-lightgrey)](#license)
+[![License](https://img.shields.io/badge/license-PolyForm%20NC%20%2B%20GPL%20%2B%20CC%20BY--SA%20per%20app-lightgrey)](#license)
 
 </div>
 
@@ -66,6 +66,8 @@ docs/
 | 👹 | `doom` | Game | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/doom-v0.1.0) | Doom ([romalik](https://github.com/romalik/m5cardputer_doom)'s port of GBADoom/PrBoom), with support for the Adv keyboard and audio. Needs the converted WAD on the SD card. **GPL-2.0-or-later**, see [apps/doom](apps/doom/README.md) |
 | 🐍 | `snake` | Game | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/snake-v0.1.0) | Classic Snake. `;` `.` `,` `/` (or WASD) move · `enter` play · `space` pause · `m` sound. Keeps your high score |
 | 🧱 | `tetrix` | Game | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/tetrix-v0.1.0) | Sideways Tetrix: the 10×20 board lies on its side and pieces fall to the right, using the full width of the screen. `;` `.` move · `,` rotate (`z` counter-clockwise) · `/` soft drop · `space` hard drop · `p` pause · `m` sound. Ghost piece, 7-bag, levels and high score |
+| 🎸 | `tuner` | Tool | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/tuner-v0.1.0) | Guitar, bass and ukulele tuner using the built-in microphone: big note name, cents meter with needle, chromatic mode and common tunings (standard, Drop D, DADGAD, Open G…). [See usage below](#tuner-usage) |
+| 📺 | `tv-b-gone` | IR remote | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/tv-b-gone-v0.1.0) | Turns TVs off (or on) over infrared by firing the original TV-B-Gone power codes for North America, Europe or both. **CC BY-SA 2.5**, see [usage below](#tv-b-gone-usage) |
 | 🏎️ | `shell-rc` | BLE remote | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/shell-rc-v0.1.0) | BLE remote control for Shell Motorsport RC cars. Pick the generation: 2024 (`QCAR-*`, 4 speeds) or 2025 (`SL-*`, lights, turbo, donut, drive mode and battery level). `;` `.` `,` `/` drive · `del` disconnect. Protocols from [shell-motorsport-rc-lib](https://github.com/AMasetti/shell-motorsport-rc-lib) and [shell-motorsport-rc-lib-2025](https://github.com/AMasetti/shell-motorsport-rc-lib-2025) |
 | 🪪 | `ekoparty-badge` | Badge | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/ekoparty-badge-v0.1.0) | Unofficial attendee badge for the Ekoparty 22 security conference: shows the event logo and a QR code to AMasetti.com, so other attendees can scan it to reach my site. Any key toggles a full-screen QR. [See the note below](#ekoparty-badge) |
 | 📡 | `meshtastic-ra02` | Firmware | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/meshtastic-ra02-v0.1.0) | Meshtastic with an RA-02 (SX1278, 433 MHz) on the EXT 14P header instead of the LoRa-1262 Cap. Wiring in [docs/hardware.md](docs/hardware.md) |
@@ -158,6 +160,34 @@ sequenceDiagram
 | 2024 | `QCAR-*` | 16 bytes, AES-128 ECB: `[0, 'C','T','L', fwd, back, left, right, 0, speed, 0…]` |
 | 2025 | `SL-*` | 8 plain bytes: `[mode, fwd, back, left, right, lights, turbo, donut]`, battery on service `0x180F` |
 
+### Tuner usage
+
+Play one string at a time near the Cardputer. The app detects the pitch with the YIN algorithm (about 38 Hz to 1400 Hz, so it covers the low E of a bass) and shows the note in big letters. The meter shows how many cents you are off: green within ±5 cents, yellow within ±15 and red beyond that, with a hint to tune up or down.
+
+In a guitar, bass or ukulele tuning the app picks the closest string by itself and marks it green once it has stayed in tune for a moment. If you are far from the string, it also shows which note it actually hears.
+
+| Key | Action |
+|---|---|
+| `;` `.` | previous / next tuning: Chromatic, Guitar (Standard, Drop D, ½ step down, Drop C, DADGAD, Open G, Open D), 4-string Bass, Ukulele |
+| `,` `/` | pick the string by hand |
+| `enter` | back to picking the string automatically |
+| `space` | play a reference tone of the string (the speaker and microphone share the same bus, so it listens again when the tone ends) |
+| `-` `=` | A4 reference from 430 to 450 Hz |
+| `n` | note names C D E or Do Re Mi |
+
+### TV-B-Gone usage
+
+Point the top end of the Cardputer, where the IR LED is, at the TV and press `enter`. The app sends the power code of each TV model in the database, one after another, with a short pause between codes. A full pass takes about 50 seconds, and most TVs react within the first half.
+
+| Key | Action |
+|---|---|
+| `enter` / `space` | start / stop |
+| `;` `.` | region: America (NA, also Asia and the rest of the world), Europe (EU, also the Middle East and Oceania) or both |
+| `l` | repeat the sequence until you stop it |
+| `del` | stop |
+
+The power codes come from the original [TV-B-Gone](https://www.tvbgone.com/) by Mitch Altman and Limor Fried, through [Ken Shirriff's Arduino port](https://github.com/shirriff/Arduino-TV-B-Gone). That code is licensed under Creative Commons Attribution-ShareAlike 2.5, so this app is too (see [apps/tv-b-gone/LICENSE](apps/tv-b-gone/LICENSE)). Please use it for fun, and not to bother people.
+
 ### Ekoparty badge
 
 `ekoparty-badge` is a personal, non-commercial fan project: a name badge to wear at [Ekoparty](https://ekoparty.org/) that turns the Cardputer into a conference badge and shares a QR code to my website.
@@ -233,14 +263,17 @@ My own work is **free for personal and other noncommercial use, but can't be sol
 
 | Part | License | Why |
 |---|---|---|
-| `snake`, `tetrix`, `shell-rc`, `ekoparty-badge`, `scripts/`, CI, docs | [PolyForm Noncommercial 1.0.0](LICENSE) | My own code |
+| `snake`, `tetrix`, `tuner`, `shell-rc`, `ekoparty-badge`, `scripts/`, CI, docs | [PolyForm Noncommercial 1.0.0](LICENSE) | My own code |
 | `doom` | [GPL-2.0-or-later](apps/doom/LICENSE) | Based on id Software's Doom, PrBoom, GBADoom and romalik's port |
 | `mp3-player` | [GPL-3.0](apps/mp3-player/LICENSE) | Links [ESP8266Audio](https://github.com/earlephilhower/ESP8266Audio), which is GPL-3.0 |
 | `meshtastic-ra02` | [GPL-3.0](apps/meshtastic-ra02/LICENSE) | Built from the [Meshtastic firmware](https://github.com/meshtastic/firmware), which is GPL-3.0 |
+| `tv-b-gone` | [CC BY-SA 2.5](apps/tv-b-gone/LICENSE) | Uses the TV-B-Gone power-code database by Mitch Altman and Limor Fried, which is CC BY-SA 2.5 |
 
 **PolyForm Noncommercial** lets anyone use, study, modify and share the code for personal, hobby, educational, research or other noncommercial purposes, as long as they keep the license and the `Required Notice` line. Selling it, or using it to make money, is not allowed without my written permission. Get in touch through [amasetti.com](https://amasetti.com) if you'd like to use it commercially.
 
 The GPL apps can be used, modified and redistributed under their GPL terms, including commercially. The GPL doesn't allow adding a noncommercial restriction on top of it. Their source code is this repository plus the upstream version pinned in each `app.json`.
+
+`tv-b-gone` can be used, modified and shared, including commercially, as long as you credit the original authors and share your changes under the same CC BY-SA license.
 
 Libraries compiled into the firmware keep their own licenses: M5Cardputer and M5GFX (MIT) and NimBLE-Arduino (Apache-2.0).
 

@@ -72,6 +72,7 @@ docs/
 | 🏎️ | `shell-rc` | BLE remote | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/shell-rc-v0.1.0) | BLE remote control for Shell Motorsport RC cars. Pick the generation: 2024 (`QCAR-*`, 4 speeds) or 2025 (`SL-*`, lights, turbo, donut, drive mode and battery level). `;` `.` `,` `/` drive · `del` disconnect. Protocols from [shell-motorsport-rc-lib](https://github.com/AMasetti/shell-motorsport-rc-lib) and [shell-motorsport-rc-lib-2025](https://github.com/AMasetti/shell-motorsport-rc-lib-2025) |
 | 💡 | `led-rc` | IR remote | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/led-rc-v0.1.0) | Infrared remote for the cheap generic RGB LED strips and bulbs: the 24-key and 44-key remotes (NEC) on a color grid, with brightness, effects and shortcuts. [See usage below](#led-rc-usage) |
 | 🌈 | `wiz-rc` | WiFi remote | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/wiz-rc-v0.1.0) | WiFi remote for WiZ lights over UDP (port 38899): finds the bulbs on your network, then controls power, color, white temperature, brightness and the 32 scenes, on one bulb or all at once. [See usage below](#wiz-rc-usage) |
+| 🏁 | `karting` | Tool | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/karting-v0.1.0) | Kart telemetry without GPS, with the Cardputer in your pocket: it estimates the path from the IMU, detects the laps by itself by recognizing the circuit repeating, and logs the session to the microSD. Experimental. [See usage below](#karting-usage) |
 | 🪪 | `ekoparty-badge` | Badge | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/ekoparty-badge-v0.1.0) | Unofficial attendee badge for the Ekoparty 22 security conference: shows the event logo and a QR code to AMasetti.com, so other attendees can scan it to reach my site. Any key toggles a full-screen QR. [See the note below](#ekoparty-badge) |
 | 📡 | `meshtastic-ra02` | Firmware | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/meshtastic-ra02-v0.1.0) | Meshtastic with an RA-02 (SX1278, 433 MHz) on the EXT 14P header instead of the LoRa-1262 Cap. Wiring in [docs/hardware.md](docs/hardware.md) |
 
@@ -237,6 +238,20 @@ sequenceDiagram
     end
 ```
 
+### Karting usage
+
+Kart telemetry with no GPS: the app uses only the IMU (accelerometer and gyroscope) of the Cardputer-Adv, which can sit in any orientation in your pocket. It estimates speed and heading, draws the path, and finds the laps by recognizing that the circuit repeats, so there is no finish line to mark. It is **experimental**: the filter was tuned against a simulator (`apps/karting/sim`), not yet on a real kart, so expect to adjust it with your first sessions.
+
+1. **Setup:** `;` `.` change the race laps by 1 (`,` `/` by 5), `r` turns the reconnaissance lap on or off, `enter` continues.
+2. **Calibrate:** sit down in the kart, stopped, and press **G0**. It takes 2 s and measures gravity and the gyroscope bias. If it moves, it starts again.
+3. **Race:** it starts by itself when you accelerate. Beeps: start, each lap (two short), end of the race (three long). With the reconnaissance lap on, the first lap doesn't count.
+4. **A sudden stop never ends the session**, since it could be a crash. End it by holding **G0 for 5 s** or `enter` for 3 s. Other keys are ignored while racing, because they can be pressed by themselves in a pocket. After the race is finished and the kart stays still for 90 s, it closes by itself.
+5. **Results:** `tab` switches between the lap table (best lap and differences), the path of the best lap colored by speed, and the session data.
+
+The first lap is confirmed after the circuit repeats (about one lap and a bit later), and the lap times are measured at the same place of the circuit each time, which is not necessarily the real finish line.
+
+**SD card:** the app only writes inside `/karting`, creates new files for each session (`sNNN_raw.csv`, `sNNN_laps.csv`, `sNNN_path.csv`), flushes every second, and never formats or deletes anything. If a write fails, it stops logging and keeps timing.
+
 ### TV-B-Gone usage
 
 Point the top end of the Cardputer, where the IR LED is, at the TV and press `enter`. The app sends the power code of each TV model in the database, one after another, with a short pause between codes. A full pass takes about 50 seconds, and most TVs react within the first half.
@@ -325,7 +340,7 @@ My own work is **free for personal and other noncommercial use, but can't be sol
 
 | Part | License | Why |
 |---|---|---|
-| `snake`, `tetrix`, `tuner`, `compass`, `shell-rc`, `led-rc`, `wiz-rc`, `ekoparty-badge`, `scripts/`, CI, docs | [PolyForm Noncommercial 1.0.0](LICENSE) | My own code |
+| `snake`, `tetrix`, `tuner`, `compass`, `shell-rc`, `led-rc`, `wiz-rc`, `karting`, `ekoparty-badge`, `scripts/`, CI, docs | [PolyForm Noncommercial 1.0.0](LICENSE) | My own code |
 | `doom` | [GPL-2.0-or-later](apps/doom/LICENSE) | Based on id Software's Doom, PrBoom, GBADoom and romalik's port |
 | `mp3-player` | [GPL-3.0](apps/mp3-player/LICENSE) | Links [ESP8266Audio](https://github.com/earlephilhower/ESP8266Audio), which is GPL-3.0 |
 | `meshtastic-ra02` | [GPL-3.0](apps/meshtastic-ra02/LICENSE) | Built from the [Meshtastic firmware](https://github.com/meshtastic/firmware), which is GPL-3.0 |

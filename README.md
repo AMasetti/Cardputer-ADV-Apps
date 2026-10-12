@@ -67,6 +67,7 @@ docs/
 | 🐍 | `snake` | Game | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/snake-v0.1.0) | Classic Snake. `;` `.` `,` `/` (or WASD) move · `enter` play · `space` pause · `m` sound. Keeps your high score |
 | 🧱 | `tetrix` | Game | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/tetrix-v0.1.0) | Sideways Tetrix: the 10×20 board lies on its side and pieces fall to the right, using the full width of the screen. `;` `.` move · `,` rotate (`z` counter-clockwise) · `/` soft drop · `space` hard drop · `p` pause · `m` sound. Ghost piece, 7-bag, levels and high score |
 | 🎸 | `tuner` | Tool | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/tuner-v0.1.0) | Guitar, bass and ukulele tuner using the built-in microphone: big note name, cents meter with needle, chromatic mode and common tunings (standard, Drop D, DADGAD, Open G…). [See usage below](#tuner-usage) |
+| 🧭 | `compass` | Tool | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/compass-v0.1.0) | Compass from the accelerometer and gyroscope: a 3D view of the Cardputer over a compass rose and a simple 2D dial with a bubble level. You set north once, since the Cardputer-Adv has no magnetometer. [See usage below](#compass-usage) |
 | 📺 | `tv-b-gone` | IR remote | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/tv-b-gone-v0.1.0) | Turns TVs off (or on) over infrared by firing the original TV-B-Gone power codes for North America, Europe or both. **CC BY-SA 2.5**, see [usage below](#tv-b-gone-usage) |
 | 🏎️ | `shell-rc` | BLE remote | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/shell-rc-v0.1.0) | BLE remote control for Shell Motorsport RC cars. Pick the generation: 2024 (`QCAR-*`, 4 speeds) or 2025 (`SL-*`, lights, turbo, donut, drive mode and battery level). `;` `.` `,` `/` drive · `del` disconnect. Protocols from [shell-motorsport-rc-lib](https://github.com/AMasetti/shell-motorsport-rc-lib) and [shell-motorsport-rc-lib-2025](https://github.com/AMasetti/shell-motorsport-rc-lib-2025) |
 | 🪪 | `ekoparty-badge` | Badge | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/ekoparty-badge-v0.1.0) | Unofficial attendee badge for the Ekoparty 22 security conference: shows the event logo and a QR code to AMasetti.com, so other attendees can scan it to reach my site. Any key toggles a full-screen QR. [See the note below](#ekoparty-badge) |
@@ -175,6 +176,23 @@ In a guitar, bass or ukulele tuning the app picks the closest string by itself a
 | `-` `=` | A4 reference from 430 to 450 Hz |
 | `n` | note names C D E or Do Re Mi |
 
+### Compass usage
+
+The Cardputer-Adv has an accelerometer and a gyroscope (BMI270) but **no magnetometer**, so it can't find magnetic north by itself. Point the top edge of the Cardputer at north (use a phone compass or a landmark) and press `enter`. From then on the gyroscope follows your heading, and the accelerometer keeps the 3D tilt right (Mahony filter). The heading drifts slowly, so set north again from time to time.
+
+On start the app calibrates the gyroscope for about 2 seconds: leave the Cardputer still on a table. It keeps refining the calibration whenever it's still.
+
+- **3D view:** the Cardputer drawn over a compass rose, seen from behind. The orange face is the top edge, and the rose turns under it as you turn.
+- **2D view:** a classic dial that turns with you, with the heading in degrees, the direction (N, NE, OSO…) and a bubble level.
+
+| Key | Action |
+|---|---|
+| `tab` / `m` | 3D / 2D view |
+| `enter` | set north to where the Cardputer points |
+| `,` `/` | turn north 5° left / right |
+| `c` | calibrate the gyroscope again (keep it still) |
+| `x` | change the sensor orientation, if tilting or turning moves the wrong way |
+
 ### TV-B-Gone usage
 
 Point the top end of the Cardputer, where the IR LED is, at the TV and press `enter`. The app sends the power code of each TV model in the database, one after another, with a short pause between codes. A full pass takes about 50 seconds, and most TVs react within the first half.
@@ -263,7 +281,7 @@ My own work is **free for personal and other noncommercial use, but can't be sol
 
 | Part | License | Why |
 |---|---|---|
-| `snake`, `tetrix`, `tuner`, `shell-rc`, `ekoparty-badge`, `scripts/`, CI, docs | [PolyForm Noncommercial 1.0.0](LICENSE) | My own code |
+| `snake`, `tetrix`, `tuner`, `compass`, `shell-rc`, `ekoparty-badge`, `scripts/`, CI, docs | [PolyForm Noncommercial 1.0.0](LICENSE) | My own code |
 | `doom` | [GPL-2.0-or-later](apps/doom/LICENSE) | Based on id Software's Doom, PrBoom, GBADoom and romalik's port |
 | `mp3-player` | [GPL-3.0](apps/mp3-player/LICENSE) | Links [ESP8266Audio](https://github.com/earlephilhower/ESP8266Audio), which is GPL-3.0 |
 | `meshtastic-ra02` | [GPL-3.0](apps/meshtastic-ra02/LICENSE) | Built from the [Meshtastic firmware](https://github.com/meshtastic/firmware), which is GPL-3.0 |

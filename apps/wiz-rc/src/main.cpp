@@ -534,7 +534,8 @@ static void drawControl()
         for (int i = -2; i <= 2; i++) {
             int idx = (scene + i + 32) % 32;
             bool cur = i == 0;
-            canvas.setFont(cur ? &fonts::Font2 : &fonts::Font0);
+            if (cur) canvas.setFont(&fonts::Font2);
+            else canvas.setFont(&fonts::Font0);
             canvas.setTextColor(cur ? C_ACCENT : C_DIM, C_BG);
             canvas.drawString((cur ? "> " : "  ") + String(idx + 1) + " " + SCENES[idx], x, 47 + i * 13 + (cur ? 0 : (i < 0 ? -3 : 3)));
         }

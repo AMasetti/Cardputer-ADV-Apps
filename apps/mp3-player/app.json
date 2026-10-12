@@ -1,8 +1,8 @@
 {
   "name": "mp3-player",
   "displayName": "MP3 Player",
-  "version": "0.1.0",
-  "description": "Reproductor de MP3 desde la microSD (/music) con lista, play/pausa, siguiente/anterior y volumen.",
+  "version": "0.2.0",
+  "description": "Reproductor de MP3 estilo iPod: navega por artistas, discos, temas y playlists, con tapas, barra de avance y playlists editables.",
   "target": "cardputer-adv",
   "builder": "platformio",
   "env": "cardputer"

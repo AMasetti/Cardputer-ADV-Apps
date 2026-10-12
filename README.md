@@ -62,7 +62,7 @@ docs/
 
 | | App | Type | Version | What it does |
 |---|---|---|---|---|
-| 🎵 | `mp3-player` | Media | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/mp3-player-v0.1.0) | Plays the `.mp3` files in `/music` on the SD card. `;` `.` list · `enter` play · `space` pause · `,` `/` previous/next · `-` `=` volume · `s` shuffle |
+| 🎵 | `mp3-player` | Media | [![v0.2.0](https://img.shields.io/badge/v0.2.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/mp3-player-v0.2.0) | iPod-style music player for the `.mp3` files in `/music`: browse by artist, album, song or playlist, Now Playing screen with cover art and progress bar, editable playlists. [See usage below](#mp3-player-usage) |
 | 👹 | `doom` | Game | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/doom-v0.1.0) | Doom ([romalik](https://github.com/romalik/m5cardputer_doom)'s port of GBADoom/PrBoom), with support for the Adv keyboard and audio. Needs the converted WAD on the SD card. **GPL-2.0-or-later**, see [apps/doom](apps/doom/README.md) |
 | 🐍 | `snake` | Game | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/snake-v0.1.0) | Classic Snake. `;` `.` `,` `/` (or WASD) move · `enter` play · `space` pause · `m` sound. Keeps your high score |
 | 🧱 | `tetrix` | Game | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/tetrix-v0.1.0) | Sideways Tetrix: the 10×20 board lies on its side and pieces fall to the right, using the full width of the screen. `;` `.` move · `,` rotate (`z` counter-clockwise) · `/` soft drop · `space` hard drop · `p` pause · `m` sound. Ghost piece, 7-bag, levels and high score |
@@ -71,6 +71,48 @@ docs/
 | 📡 | `meshtastic-ra02` | Firmware | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/meshtastic-ra02-v0.1.0) | Meshtastic with an RA-02 (SX1278, 433 MHz) on the EXT 14P header instead of the LoRa-1262 Cap. Wiring in [docs/hardware.md](docs/hardware.md) |
 
 Licenses differ per app, see [License](#license).
+
+### MP3 Player usage
+
+Copy your music to `/music` on the microSD, one folder per album works best (`Artist - Album (Year)/01 - Title.mp3`). The app groups songs by their ID3 tags (album artist, album, track and disc number) and falls back to folder and file names when a tag is missing. Covers come from `cover.jpg`/`folder.jpg`/`front.jpg` in the album folder or from the picture embedded in the MP3 (baseline JPEG or PNG).
+
+The first start reads every tag and saves an index to `/music/.mp3player/library.tsv`, which takes a while with a large library. Later starts only read new files. **Settings → Rebuild Library** reads everything again, for example after retagging.
+
+```mermaid
+flowchart LR
+    M[Music] --> NP[Now Playing]
+    M --> PL[Playlists] --> P[Playlist] --> AS["+ Add Songs"]
+    M --> AR[Artists] --> A[Artist] --> AL
+    A --> ALL[All Songs]
+    M --> ALB[Albums] --> AL[Album]
+    M --> S[Songs]
+    M --> SH[Shuffle Songs]
+    M --> ST[Settings]
+    AL -- enter on a song --> NP
+```
+
+| Key | Lists | Now Playing |
+|---|---|---|
+| `;` `.` | up / down (hold to scroll fast) | volume up / down |
+| `enter` `/` | open / play from here | `enter` opens the album |
+| `,` `del` | back | `,` `/` previous / next (hold: rewind / fast-forward) |
+| `space` | play / pause | play / pause |
+| `-` `=` | volume | volume |
+| `n` `p` | next / previous song | next / previous song |
+| `s` `r` | shuffle on-off / repeat off-all-one | same |
+| `a` | add the selected song, album or artist to a playlist | add the current song |
+| `tab` / `h` | jump to Now Playing and back / main menu | same |
+
+**Playlists** are `.m3u` files in `/music/Playlists`, so you can also edit them on a computer.
+
+- In **Playlists**:
+  - `+ New Playlist` creates one.
+  - `e` renames the selected playlist.
+  - `x` deletes it (asks first).
+- Inside a playlist:
+  - `+ Add Songs` opens the library in add mode, where `enter` (or `a` on an album or artist) adds to that playlist and `del` goes back.
+  - `m` picks up a song so you can reorder it with `;` `.`. Press `m` or `enter` to drop it.
+  - `x` removes a song.
 
 ### Tetrix controls
 
@@ -157,7 +199,7 @@ The `.bin` files are **only the app partition** (`firmware.bin`), not the merged
 
 ```bash
 pip install platformio==6.1.19               # same version the CI pins
-scripts/build-app.sh mp3-player              # -> dist/mp3-player/mp3-player-v0.1.0.bin
+scripts/build-app.sh mp3-player              # -> dist/mp3-player/mp3-player-v0.2.0.bin
 scripts/build-app.sh meshtastic-ra02 dev.1   # clones upstream into apps/meshtastic-ra02/.work
 pio run -d apps/mp3-player -t upload         # flashes over USB directly (overwrites the Launcher)
 ```

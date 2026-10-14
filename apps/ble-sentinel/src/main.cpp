@@ -68,7 +68,8 @@ bool sdOk = false;
 
 enum class Screen : uint8_t { List, Detail, Follow };
 Screen screen = Screen::List;
-int cursorIndex = 0; // selección en la lista, solo usable con el scan pausado
+int cursorIndex = 0;  // índice ABSOLUTO en sortedOrder(), no la fila visible
+int scrollOffset = 0; // primer índice visible; se ajusta para que cursorIndex siempre se vea
 uint64_t selectedFingerprint = 0; // dispositivo elegido, vive en Detail y Follow
 
 String toastMsg;        // feedback corto (ej. "exportado: ...") en el footer
@@ -209,10 +210,19 @@ void drawSignalBars(int x, int y, int rssi, uint16_t color)
     }
 }
 
-// Orden de la lista: primero los sospechosos de convoy (la alerta más
-// seria), después por RSSI desc. Compartido entre drawList() y la
-// selección por teclado -- ambos tienen que ver exactamente el mismo
-// orden, si no cursorIndex apunta a una fila distinta de la que se ve.
+// "Identificado" = tiene una categoría real de SignatureDB, no el default
+// de "no matcheó nada". Separado de confidenceLow a propósito: un match
+// no verificado sigue siendo un resultado identificado (sabemos qué es,
+// aunque la firma no esté confirmada todavía), lo que no es identificado
+// es Unknown -- ahí no sabemos nada.
+bool isIdentified(signaturedb::Category c) { return c != signaturedb::Category::Unknown; }
+
+// Orden de la lista, por prioridad: 1) sospechosos de convoy (la alerta
+// más seria), 2) resultados identificados (sabemos qué son -- son los
+// interesantes), 3) todo lo demás. Dentro de cada grupo, por RSSI desc.
+// Compartido entre drawList() y la selección por teclado -- ambos tienen
+// que ver exactamente el mismo orden, si no cursorIndex apunta a una fila
+// distinta de la que se ve.
 std::vector<size_t> sortedOrder()
 {
     size_t n = sightingstore::count();
@@ -224,6 +234,9 @@ std::vector<size_t> sortedOrder()
         bool convoyA = convoyanalyzer::isSuspect(ra->fingerprintHash);
         bool convoyB = convoyanalyzer::isSuspect(rb->fingerprintHash);
         if (convoyA != convoyB) return convoyA;
+        bool idA = isIdentified(ra->category);
+        bool idB = isIdentified(rb->category);
+        if (idA != idB) return idA;
         return ra->lastRssi > rb->lastRssi;
     });
     return order;
@@ -246,16 +259,28 @@ void drawList()
 
     std::vector<size_t> order = sortedOrder();
     bool selectable = !blescanner::scanning();
+    bool scrollable = n > static_cast<size_t>(MAX_VISIBLE_ROWS);
+
+    // scrollOffset sigue a cursorIndex: si la selección se fue arriba o
+    // abajo de la ventana visible, la ventana se desliza para que entre.
+    // Clampeamos con n real por si la lista encogió (no pasa hoy, pero
+    // más vale no asumir).
+    int maxOffset = std::max(0, static_cast<int>(n) - MAX_VISIBLE_ROWS);
+    if (scrollOffset > maxOffset) scrollOffset = maxOffset;
+    if (cursorIndex < scrollOffset) scrollOffset = cursorIndex;
+    if (cursorIndex > scrollOffset + MAX_VISIBLE_ROWS - 1) scrollOffset = cursorIndex - MAX_VISIBLE_ROWS + 1;
 
     canvas.setFont(&fonts::Font0);
-    size_t shown = std::min<size_t>(order.size(), MAX_VISIBLE_ROWS);
-    for (size_t row = 0; row < shown; row++) {
-        const sightingstore::Record *r = sightingstore::byIndex(order[row]);
+    size_t first = selectable ? static_cast<size_t>(scrollOffset) : 0;
+    size_t shown = std::min<size_t>(order.size() - first, MAX_VISIBLE_ROWS);
+    for (size_t i = 0; i < shown; i++) {
+        size_t absIndex = first + i;
+        const sightingstore::Record *r = sightingstore::byIndex(order[absIndex]);
         if (!r) continue;
-        int y = LIST_TOP + row * ROW_H;
+        int y = LIST_TOP + static_cast<int>(i) * ROW_H;
         bool convoySuspect = convoyanalyzer::isSuspect(r->fingerprintHash);
         uint16_t color = categoryColor(r->category, r->confidenceLow);
-        bool sel = selectable && static_cast<int>(row) == cursorIndex;
+        bool sel = selectable && static_cast<int>(absIndex) == cursorIndex;
 
         if (sel) canvas.fillRect(0, y, SCREEN_W, ROW_H - 1, C_HUD);
 
@@ -273,16 +298,28 @@ void drawList()
 
         canvas.setTextColor(C_DIM, rowBg);
         canvas.setTextDatum(middle_right);
-        canvas.drawString(r->lastMac.substring(9), 148, y + ROW_H / 2); // últimos 3 octetos
-        if (r->confidenceLow) canvas.drawString("?", 156, y + ROW_H / 2);
+        canvas.drawString(r->lastMac.substring(9), 144, y + ROW_H / 2); // últimos 3 octetos
+        if (r->confidenceLow) canvas.drawString("?", 152, y + ROW_H / 2);
 
         canvas.setTextColor(r->timesSeen > 1 ? C_TEXT : C_DIM, rowBg);
-        canvas.drawString(String("x") + r->timesSeen, 184, y + ROW_H / 2);
+        canvas.drawString(String("x") + r->timesSeen, 180, y + ROW_H / 2);
 
         canvas.setTextDatum(middle_right);
         canvas.setTextColor(C_DIM, rowBg);
-        canvas.drawString(String(r->lastRssi), SCREEN_W - 24, y + ROW_H / 2);
-        drawSignalBars(SCREEN_W - 18, y + 1, r->lastRssi, color);
+        canvas.drawString(String(r->lastRssi), SCREEN_W - 28, y + ROW_H / 2);
+        drawSignalBars(SCREEN_W - 22, y + 1, r->lastRssi, color);
+    }
+
+    // Scrollbar: track + thumb en la franja angosta que liberamos a la
+    // derecha. Solo se dibuja si de verdad hay más filas que lugar --
+    // así no aparece sin necesidad en listas chicas.
+    if (scrollable) {
+        int trackX = SCREEN_W - 3;
+        int trackH = SCREEN_H - LIST_TOP;
+        canvas.drawFastVLine(trackX, LIST_TOP, trackH, C_HUD);
+        int thumbH = std::max(4, trackH * MAX_VISIBLE_ROWS / static_cast<int>(n));
+        int thumbY = LIST_TOP + trackH * scrollOffset / static_cast<int>(n);
+        canvas.fillRect(trackX - 1, thumbY, 3, thumbH, C_ACCENT);
     }
 }
 
@@ -544,7 +581,9 @@ void handleKeyboard()
         if (!blescanner::scanning()) {
             size_t n = sightingstore::count();
             if (n > 0) {
-                int maxIndex = static_cast<int>(std::min(n, static_cast<size_t>(MAX_VISIBLE_ROWS))) - 1;
+                // Rango completo de la lista, no solo las filas visibles --
+                // drawList() hace scroll para que cursorIndex siempre se vea.
+                int maxIndex = static_cast<int>(n) - 1;
                 if (cursorIndex > maxIndex) cursorIndex = maxIndex;
                 if (cursorIndex < 0) cursorIndex = 0;
                 if (hasChar(ks, ";w") && cursorIndex > 0) {

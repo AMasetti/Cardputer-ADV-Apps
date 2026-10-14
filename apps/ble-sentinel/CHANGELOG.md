@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.6.0]
+- Scroll en la lista: con más dispositivos que filas visibles, `cursorIndex`
+  pasa a ser un índice absoluto sobre toda la lista (no solo las filas en
+  pantalla) y la ventana visible se desliza para seguirlo. Scrollbar a la
+  derecha (track + thumb) cuando hay más filas que lugar.
+- Prioridad de orden actualizada: sospechosos de convoy, después
+  **resultados identificados** (categoría real de SignatureDB -- son los
+  interesantes, se destacan sobre lo no identificado aunque tenga mejor
+  señal), recién ahí el resto por RSSI desc dentro de cada grupo.
+
 ## [0.5.0]
 - Se reemplazó el radar por una pantalla de seguimiento honesta con lo
   que el RSSI realmente da: número grande + sparkline de las últimas

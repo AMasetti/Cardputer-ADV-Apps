@@ -212,9 +212,29 @@ Implementado: `src/alert_engine.h/.cpp`. Perfiles v1:
 | Confiado/baseline | 0% (silencioso) | — | — |
 
 Cooldown de 60s por `fingerprint_hash` para evitar que un dispositivo fijo
-alerte sin parar mientras sigue a la vista. Toggle general (`m`) y volumen
-master (`+`/`-`) desde teclado en v1; UI de configuración más completa
-queda para después.
+alerte sin parar mientras sigue a la vista (más el perfil `ConvoySuspect`,
+cooldown de 30s, ver sección 2). Toggle general con **G0 mantenido**
+(arranca en mute) y volumen master con `+`/`-` desde teclado; UI de
+configuración más completa queda para después.
+
+## UI — lista, selección y orden
+
+Implementado en `main.cpp`. La lista (`drawList()`/`sortedOrder()`) y la
+navegación por teclado comparten estado:
+
+- **Orden de prioridad**, de más a menos urgente: 1) sospechosos de
+  convoy, 2) resultados **identificados** (`category != Unknown` --
+  tienen una categoría real de SignatureDB, son los interesantes aunque
+  su RSSI sea peor que el de algo no identificado), 3) todo lo demás.
+  Dentro de cada grupo, por RSSI desc.
+- **Scroll**: con el scan pausado, `cursorIndex` es un índice absoluto
+  sobre toda la lista ordenada, no solo sobre las filas que entran en
+  pantalla (`MAX_VISIBLE_ROWS`, hoy 8). `drawList()` calcula una ventana
+  (`scrollOffset`) que se desliza para que la selección siempre esté
+  visible, con una scrollbar (track + thumb) a la derecha cuando hay más
+  filas que lugar.
+- Mientras el scan sigue corriendo, la selección no existe (la lista se
+  reordena sola con cada paquete) y siempre se ve desde el principio.
 
 ## SignatureDB — estado de las firmas
 

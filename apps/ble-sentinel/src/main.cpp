@@ -9,6 +9,7 @@
 //
 // Controles:
 //   G0 (mantenido ~0.8s)  activar/silenciar alertas de audio (arranca en mute)
+//   espacio               pausar/reanudar el scan
 //   +/-                   volumen master
 #include <M5Cardputer.h>
 #include <SD.h>
@@ -238,14 +239,26 @@ void drawFooter(const char *text)
     canvas.drawString(text, SCREEN_W / 2, SCREEN_H - 2);
 }
 
+// En una zona con varios dispositivos, cada paquete de advertising (cada
+// ~100-1000ms por dispositivo) marca `dirty`. Sin throttle, la lista se
+// reordena por RSSI en cada uno de esos paquetes y el resultado es un
+// parpadeo/"scroll" constante. Redibujamos como máximo a este ritmo; el
+// flag `dirty` sigue en pie entre medio, así que no se pierde ningún
+// cambio, solo se agrupan.
+constexpr uint32_t RENDER_INTERVAL_MS = 300;
+
 void render()
 {
-    if (!dirty) return;
+    static uint32_t lastRenderMs = 0;
+    uint32_t now = millis();
+    if (!dirty || (now - lastRenderMs < RENDER_INTERVAL_MS)) return;
+    lastRenderMs = now;
+
     canvas.fillScreen(C_BG);
     drawHud();
     drawStatusBar();
     drawList();
-    drawFooter("+/- volumen   G0 mant.: audio");
+    drawFooter("space: scan   +/- vol   G0 mant.: audio");
     canvas.pushSprite(0, 0);
     dirty = false;
 }
@@ -262,6 +275,10 @@ void handleKeyboard()
             dirty = true;
         } else if (c == '-') {
             alertengine::setMasterVolume(std::max(0, alertengine::masterVolume() - 20));
+            dirty = true;
+        } else if (c == ' ') {
+            if (blescanner::scanning()) blescanner::stop();
+            else blescanner::start();
             dirty = true;
         }
     }

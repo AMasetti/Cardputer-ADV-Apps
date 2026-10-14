@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.2]
+- Fix: la lista se reordenaba y parpadeaba en cada paquete de advertising
+  (varias veces por segundo con varios dispositivos cerca). Render
+  throttleado a ~300ms, sin perder ninguna actualización.
+- Nuevo: `space` pausa/reanuda el scan (antes no había forma de detenerlo).
+
 ## [0.1.1]
 - UI rehecha con el mismo lenguaje visual que `shell-rc`/`led-rc`: HUD
   arriba, chips de estado (audio/SD), barras de señal por dispositivo,

@@ -11,6 +11,7 @@ const Profile PROFILES[] = {
     /* SuspiciousDefault  */ {100, 1200, 160, 2, 60000},
     /* HeadsetLowPriority */ {35, 800, 160, 1, 60000},
     /* Silent             */ {0, 0, 0, 0, 0},
+    /* ConvoySuspect      */ {100, 2200, 120, 4, 30000}, // más agudo, más beeps, cooldown más corto
 };
 
 const Profile &profileFor(signaturedb::AlertProfile p)
@@ -108,9 +109,17 @@ void trigger(signaturedb::AlertProfile profileId, uint64_t fingerprintHash)
     const Profile &p = profileFor(profileId);
     if (p.volumePct == 0 || p.beepCount == 0) return; // perfil Silent
 
+    // El cooldown es por (dispositivo, perfil), no solo por dispositivo:
+    // sin esto, una alerta de ConvoySuspect para un fingerprint que ya
+    // disparó SuspiciousDefault hace poco quedaría bloqueada por el
+    // cooldown de esa OTRA alerta, aunque sean cosas distintas. profileId
+    // cabe en pocos bits, así que mezclarlo en los bits altos del hash no
+    // genera colisiones prácticas entre dispositivos reales.
+    uint64_t cooldownKey = fingerprintHash ^ (static_cast<uint64_t>(profileId) << 60);
+
     uint32_t now = millis();
-    if (withinCooldown(fingerprintHash, p.cooldownMs, now)) return;
-    recordTrigger(fingerprintHash, now);
+    if (withinCooldown(cooldownKey, p.cooldownMs, now)) return;
+    recordTrigger(cooldownKey, now);
 
     startPattern(p);
 }

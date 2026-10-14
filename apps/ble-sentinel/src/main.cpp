@@ -2,14 +2,17 @@
 // manufacturer data. Ver docs/BLE_SENTINEL_SPEC.md para el diseño completo.
 //
 // v1 incluye: fingerprint resistente a rotación de MAC, SignatureDB con
-// smart glasses (Meta/Luxottica, Snap), alertas de audio por categoría, y
-// log de avistamientos a SD (timestamp relativo al boot, sin RTC todavía).
-// Pendiente para próximas versiones: ConvoyAnalyzer, RoomSweepEngine,
-// WiFiSniffer, ExportModule, soporte de RTC por Grove.
+// smart glasses (Meta/Luxottica, Snap), alertas de audio por categoría,
+// log de avistamientos a SD (timestamp relativo al boot, sin RTC todavía),
+// y ConvoyAnalyzer (detección de seguimiento sostenido entre "contextos"
+// marcados a mano -- sin GPS no hay forma automática de saber que uno se
+// movió). Pendiente para próximas versiones: RoomSweepEngine, WiFiSniffer,
+// ExportModule, soporte de RTC por Grove.
 //
 // Controles:
 //   G0 (mantenido ~0.8s)  activar/silenciar alertas de audio (arranca en mute)
 //   espacio               pausar/reanudar el scan
+//   c                     marcar "cambié de lugar" (nuevo contexto, ver ConvoyAnalyzer)
 //   +/-                   volumen master
 #include <M5Cardputer.h>
 #include <SD.h>
@@ -22,6 +25,7 @@
 #include "sighting_store.h"
 #include "ble_scanner.h"
 #include "alert_engine.h"
+#include "convoy_analyzer.h"
 
 #ifndef APP_VERSION
 #define APP_VERSION "dev"
@@ -153,6 +157,10 @@ void drawStatusBar()
     drawChip(4, y, 46, alertengine::enabled() ? "AUDIO ON" : "MUTE", alertengine::enabled(), C_ON);
     drawChip(54, y, 36, sdOk ? "SD OK" : "SD --", sdOk, C_ON);
 
+    canvas.setTextDatum(middle_left);
+    canvas.setTextColor(C_DIM, C_BG);
+    canvas.drawString(String("ctx ") + convoyanalyzer::currentContext(), 94, y + 6);
+
     canvas.setTextDatum(middle_right);
     canvas.setTextColor(C_DIM, C_BG);
     canvas.drawString(String("vol ") + (alertengine::masterVolume() * 100 / 255) + "%",
@@ -192,12 +200,19 @@ void drawList()
         return;
     }
 
-    // Copiamos índices y ordenamos por RSSI desc (más cerca arriba) sin
-    // tocar el store -- es solo para esta pasada de dibujo.
+    // Copiamos índices y ordenamos: primero los sospechosos de convoy
+    // (posible seguimiento, la alerta más seria que tenemos), después por
+    // RSSI desc dentro de cada grupo. Sin tocar el store, es solo para esta
+    // pasada de dibujo.
     std::vector<size_t> order(n);
     for (size_t i = 0; i < n; i++) order[i] = i;
     std::sort(order.begin(), order.end(), [](size_t a, size_t b) {
-        return sightingstore::byIndex(a)->lastRssi > sightingstore::byIndex(b)->lastRssi;
+        const sightingstore::Record *ra = sightingstore::byIndex(a);
+        const sightingstore::Record *rb = sightingstore::byIndex(b);
+        bool convoyA = convoyanalyzer::isSuspect(ra->fingerprintHash);
+        bool convoyB = convoyanalyzer::isSuspect(rb->fingerprintHash);
+        if (convoyA != convoyB) return convoyA;
+        return ra->lastRssi > rb->lastRssi;
     });
 
     canvas.setFont(&fonts::Font0);
@@ -206,15 +221,18 @@ void drawList()
         const sightingstore::Record *r = sightingstore::byIndex(order[row]);
         if (!r) continue;
         int y = LIST_TOP + row * ROW_H;
+        bool convoySuspect = convoyanalyzer::isSuspect(r->fingerprintHash);
         uint16_t color = categoryColor(r->category, r->confidenceLow);
 
         // Franja de color a la izquierda: distingue la fila de un vistazo
-        // sin tener que leer el label, igual que la cruz de shell-rc.
-        canvas.fillRect(0, y, 3, ROW_H - 1, color);
+        // sin tener que leer el label, igual que la cruz de shell-rc. Un
+        // sospechoso de convoy pisa el color de categoría: es la alerta
+        // más seria, no "este tipo de dispositivo".
+        canvas.fillRect(0, y, 3, ROW_H - 1, convoySuspect ? C_ACCENT : color);
 
         canvas.setTextDatum(middle_left);
-        canvas.setTextColor(color, C_BG);
-        canvas.drawString(categoryLabel(r->category), 6, y + ROW_H / 2);
+        canvas.setTextColor(convoySuspect ? C_ACCENT : color, C_BG);
+        canvas.drawString(convoySuspect ? "!SIGUE" : categoryLabel(r->category), 6, y + ROW_H / 2);
 
         canvas.setTextColor(C_DIM, C_BG);
         canvas.setTextDatum(middle_right);
@@ -258,7 +276,7 @@ void render()
     drawHud();
     drawStatusBar();
     drawList();
-    drawFooter("space: scan   +/- vol   G0 mant.: audio");
+    drawFooter("c: lugar   space: scan   +/- vol   G0: audio");
     canvas.pushSprite(0, 0);
     dirty = false;
 }
@@ -279,6 +297,9 @@ void handleKeyboard()
         } else if (c == ' ') {
             if (blescanner::scanning()) blescanner::stop();
             else blescanner::start();
+            dirty = true;
+        } else if (c == 'c') {
+            convoyanalyzer::markNewContext();
             dirty = true;
         }
     }
@@ -332,6 +353,15 @@ void processSightings()
             kind == sightingstore::SightingKind::MacRotated) {
             alertengine::trigger(res.alertProfile, fp.hash);
         }
+
+        // Alimenta el ConvoyAnalyzer con todo, no solo New/MacRotated: lo
+        // que le importa es "en qué contexto se vio este fingerprint", y
+        // eso pasa en cada paquete, no solo cuando cambia de estado.
+        convoyanalyzer::onSighting(fp.hash);
+        if (convoyanalyzer::isSuspect(fp.hash)) {
+            alertengine::trigger(signaturedb::AlertProfile::ConvoySuspect, fp.hash);
+        }
+
         dirty = true;
     }
 }
@@ -349,6 +379,7 @@ void setup()
     sdOk = initSdCard();
     sightingstore::begin(sdOk);
     alertengine::begin();
+    convoyanalyzer::begin();
     blescanner::begin();
     blescanner::start();
 }

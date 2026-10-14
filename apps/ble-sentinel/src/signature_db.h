@@ -31,6 +31,7 @@ enum class AlertProfile : uint8_t {
     SuspiciousDefault,
     HeadsetLowPriority,
     Silent,
+    ConvoySuspect, // disparado por convoy_analyzer, no por match de firma
 };
 
 struct Entry {

@@ -45,18 +45,30 @@ Implementado: `src/fingerprint.h/.cpp`.
 
 **Objetivo:** distinguir "hay un dispositivo cerca" de "me está siguiendo".
 
-**Diseño (pendiente de implementar — no está en v1):**
-- Cada `Record` guarda en qué `context_id` fue visto (el usuario marca
-  manualmente "cambié de lugar", o se deriva de GPS si se agrega ese módulo
-  a futuro).
-- `convoy_score` sube con: dispositivos vistos en 3+ contextos distintos,
-  duración sostenida por contexto, tendencia de RSSI que no decae con el
-  movimiento del usuario.
-- Score ≥ umbral → categoría de alerta propia, prioridad máxima.
+**Implementado**: `src/convoy_analyzer.h/.cpp`, cableado en `main.cpp`
+(`processSightings`, tecla `c`, prioridad de orden + marcador `!SIGUE` en
+la lista).
 
-No implementado en v1 porque depende de `context_id`, que todavía no tiene
-UI ni fuente de datos (GPS opcional). Queda como el siguiente incremento
-natural sobre `sighting_store`.
+- `context_id` (en el código, `currentContext()`) es manual: el usuario
+  marca "cambié de lugar" con la tecla `c`. No hay GPS en el Cardputer
+  base — si se agrega ese módulo a futuro, lo natural es que dispare
+  `markNewContext()` solo cuando el desplazamiento supera un umbral, sin
+  tocar el resto de la API.
+- `score()` por fingerprint suma: +40 si se vio en 3+ contextos distintos,
+  +20 si el promedio de duración por contexto supera 5 min, +10 si la
+  ventana total entre el primer y el último avistamiento supera 1h.
+  `isSuspect()` es `score() >= 60`.
+- **Pendiente (0 puntos hoy):** correlación entre la tendencia de RSSI y el
+  movimiento propio del usuario (necesitaría acelerómetro o GPS). Sin ese
+  factor, el máximo posible es 70 — alcanza para cruzar el umbral con "3+
+  contextos" solo, o con "3+ contextos" + cualquiera de los otros dos; un
+  solo factor aislado nunca dispara la alerta.
+- Un sospechoso de convoy dispara `AlertProfile::ConvoySuspect` (audio más
+  agudo, más beeps, cooldown más corto que el resto) y dentro de
+  `alert_engine` el cooldown quedó corregido para ser por (dispositivo,
+  perfil) y no solo por dispositivo — si no, una alerta de convoy para un
+  fingerprint que ya había disparado `SuspiciousDefault` hacía poco
+  quedaba bloqueada por el cooldown de esa otra alerta.
 
 ## 3. Modo "barrido de ambiente" (room sweep)
 

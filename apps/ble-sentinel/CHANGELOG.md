@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.0]
+- Nuevo: ConvoyAnalyzer (detección de seguimiento sostenido). Tecla `c`
+  marca "cambié de lugar"; un dispositivo visto en 3+ lugares distintos
+  (+ duración sostenida y/o ventana temporal larga) se marca `!SIGUE`,
+  sube al tope de la lista y dispara un perfil de audio propio
+  (`ConvoySuspect`), más agudo y con cooldown más corto.
+- Fix: el cooldown de `AlertEngine` era solo por dispositivo, no por
+  (dispositivo, perfil) — una alerta nueva podía quedar bloqueada por el
+  cooldown de una alerta distinta para el mismo fingerprint.
+
 ## [0.1.2]
 - Fix: la lista se reordenaba y parpadeaba en cada paquete de advertising
   (varias veces por segundo con varios dispositivos cerca). Render

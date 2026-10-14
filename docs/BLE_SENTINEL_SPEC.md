@@ -75,31 +75,45 @@ la lista).
 **Objetivo:** localizar físicamente un dispositivo ya detectado (buscar
 cámara/mic oculto en un cuarto).
 
-**Diseño (pendiente):** modo dedicado que filtra el scan a un solo
-`fingerprint_hash`, lee RSSI a alta frecuencia (~200-500ms), y muestra un
-indicador relativo tipo "más cerca / más lejos" (no es triangulación real,
-es gradiente de RSSI — hay que dejarlo claro en la UI para no generar falsa
-confianza, dado el ruido de multipath en interiores).
+**Implementado** como "radar", `src/room_sweep.h/.cpp` + `drawRadar()` en
+`main.cpp`: con el scan pausado, `;`/`.` mueve la selección en la lista y
+`enter` sobre un dispositivo entra a la pantalla de radar (que retoma el
+scan si estaba pausado, porque necesita RSSI en vivo).
 
-No implementado en v1.
+- No es triangulación real -- sigue siendo gradiente de RSSI, como estaba
+  planeado. La UI lo deja explícito con un cartel ("señal relativa, no
+  posición real").
+- El punto en el radar tiene **ángulo fijo por fingerprint** (derivado del
+  hash) y solo la **distancia al centro** varía con la señal -- a
+  propósito: no tenemos información de dirección real, y variar el
+  ángulo además de la distancia sugeriría una posición que no podemos
+  conocer. El barrido giratorio de fondo es cosmético.
+- `roomsweep::trend()` compara la primera mitad contra la segunda mitad de
+  una ventana corta (8 muestras) para decir "acercándose/alejándose/
+  estable", con una zona muerta de 3dBm para no leer ruido de RF como
+  tendencia real.
+- `del` vuelve a la lista.
 
 ## 4. Correlación BLE + WiFi
 
 **Objetivo:** cubrir dispositivos que usan WiFi (hotspot de cámaras/drones)
 en vez de o además de BLE.
 
-**Diseño (pendiente):** `WiFiSniffer` en modo promiscuo (`esp_wifi_set_promiscuous`,
-sin asociarse a ninguna red) leyendo beacon frames y probe requests. Mismo
-OUI visto en BLE y WiFi en la misma ventana → se linkean como "dispositivo
-dual-radio". SSID con prefijos conocidos de hotspot de cámara/drone →
-categoriza directo sin necesitar BLE.
+**Diseño (pendiente, no implementado):** `WiFiSniffer` en modo promiscuo
+(`esp_wifi_set_promiscuous`, sin asociarse a ninguna red) leyendo beacon
+frames y probe requests. Mismo OUI visto en BLE y WiFi en la misma ventana
+→ se linkean como "dispositivo dual-radio". SSID con prefijos conocidos de
+hotspot de cámara/drone → categoriza directo sin necesitar BLE.
 
-**Nota de diseño:** correr WiFi promiscuo y BLE scan en simultáneo en el
-mismo ESP32-S3 compite por tiempo de radio — probablemente haga falta
-time-slicing (alternar ventanas de 2-3s por radio) en vez de concurrencia
-real. A validar en el prototipo.
-
-No implementado en v1.
+**Por qué sigue sin implementar:** correr WiFi promiscuo y BLE scan en
+simultáneo en el mismo ESP32-S3 compite por tiempo de radio y probablemente
+necesite time-slicing en vez de concurrencia real -- es una decisión de
+diseño que hay que validar en el prototipo real, no algo para resolver a
+ciegas en una sesión sin el hardware delante. Además, el `platformio.ini`
+actual deshabilita a propósito los roles NimBLE que no sean observer
+(sección 7) como garantía de que este binario no se puede volver
+"ruidoso" por error; sumar WiFi promiscuo es un subsistema de radio
+distinto y merece su propio build/validación antes de mezclarlo con eso.
 
 ## 5. "Primera vez visto vs. recurrente"
 
@@ -118,17 +132,27 @@ puedan leer directo).
 
 ## 6. Exportación como registro/evidencia
 
-**Diseño (pendiente de implementar como módulo propio — v1 ya deja el log
-en un formato consumible):**
-- CSV + JSON con hash SHA-256 del archivo generado al lado (`.sha256`), más
-  un log de exports (`/sentinel/export_log.txt`) con timestamp+filename+hash.
-- **Limitación a documentar en la UI:** esto es integridad básica (detecta
-  modificación posterior), no es firma criptográfica con clave privada ni
-  timestamp de autoridad certificada. Si el uso real es legal, la app
-  facilita el registro — no sustituye asesoría legal sobre admisibilidad.
+**Implementado:** `src/export_module.h/.cpp`, tecla `e` desde la lista.
 
-No implementado en v1 como módulo de export; el log base que necesita ya
-existe (`sighting_store` escribe a SD en formato JSON por línea).
+- Vuelca el `sighting_store` actual a `/sentinel/exports/export_s<ses>_<n>.csv`
+  y `.json` (mismo contenido, JSON con metadata de sesión).
+- Cada archivo tiene un `.sha256` al lado (hash calculado con la API
+  genérica de mbedtls, `mbedtls_md_*`, incremental para no cargar el
+  archivo entero en RAM) y una línea en `/sentinel/export_log.txt` con
+  `{ts_rel_ms, file, sha256}`.
+- **Limitación documentada, no silenciada:** esto es integridad básica
+  (detecta modificación posterior), no es firma criptográfica con clave
+  privada ni timestamp de autoridad certificada. El JSON exportado incluye
+  `"timestamp_type":"relative_since_boot"` explícito por la misma razón que
+  el resto de la app (sección 5) -- si el uso real es documentar algo
+  serio, esto ayuda pero no sustituye asesoría legal sobre admisibilidad.
+- **No validado en hardware real todavía:** la API `mbedtls_md_*` es la
+  más estable entre versiones de mbedtls (evita la saga de renombres de
+  `mbedtls_sha256_starts`/`_ret`), pero no se compiló en este entorno
+  (sin toolchain PlatformIO) -- si el CI la rechaza, es la primera
+  sospechosa junto con el modo de apertura de archivo para el log
+  append (`FILE_WRITE` reabierto en cada export, asumiendo que el core
+  de Arduino-ESP32 lo posiciona al final del archivo en vez de truncar).
 
 ## 7. Auto-ocultamiento del propio Cardputer
 

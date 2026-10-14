@@ -56,5 +56,6 @@ SightingKind record(uint64_t fingerprintHash, const String &mac, int8_t rssi,
 
 size_t count();
 const Record *byIndex(size_t i); // para listar en UI, ordenado por lastSeenMs desc
+const Record *byFingerprint(uint64_t fingerprintHash); // para seguir un dispositivo puntual (radar)
 
 } // namespace sightingstore

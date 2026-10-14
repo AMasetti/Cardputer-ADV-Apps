@@ -160,4 +160,9 @@ const Record *byIndex(size_t i)
     return &records[i];
 }
 
+const Record *byFingerprint(uint64_t fingerprintHash)
+{
+    return find(fingerprintHash);
+}
+
 } // namespace sightingstore

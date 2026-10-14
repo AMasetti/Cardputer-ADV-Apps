@@ -1,7 +1,7 @@
 {
   "name": "ble-sentinel",
   "displayName": "BLE Sentinel",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Detector pasivo de dispositivos BLE: identifica drones (Remote ID), smart glasses, trackers y más por firma de manufacturer data. Solo escucha, nunca anuncia.",
   "target": "cardputer-adv",
   "builder": "platformio",

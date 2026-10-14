@@ -4,21 +4,27 @@
 // v1 incluye: fingerprint resistente a rotación de MAC, SignatureDB con
 // smart glasses (Meta/Luxottica, Snap), alertas de audio por categoría,
 // log de avistamientos a SD (timestamp relativo al boot, sin RTC todavía),
-// y ConvoyAnalyzer (detección de seguimiento sostenido entre "contextos"
-// marcados a mano -- sin GPS no hay forma automática de saber que uno se
-// movió). Pendiente para próximas versiones: RoomSweepEngine, WiFiSniffer,
-// ExportModule, soporte de RTC por Grove.
+// ConvoyAnalyzer (seguimiento sostenido entre "contextos" marcados a
+// mano) y RoomSweep (seguir un dispositivo puntual con un radar de RSSI)
+// + ExportModule (CSV/JSON con hash de integridad a SD).
+// Pendiente para próximas versiones: WiFiSniffer, soporte de RTC por
+// Grove, más firmas (drones, trackers).
 //
 // Controles:
 //   G0 (mantenido ~0.8s)  activar/silenciar alertas de audio (arranca en mute)
 //   espacio               pausar/reanudar el scan
+//   ; w  /  . s           (con el scan pausado) mover la selección en la lista
+//   enter                 (con un dispositivo seleccionado) seguirlo con el radar
+//   del                   volver de la pantalla de radar a la lista
 //   c                     marcar "cambié de lugar" (nuevo contexto, ver ConvoyAnalyzer)
+//   e                     exportar lo visto hasta ahora (CSV + JSON + hash) a SD
 //   +/-                   volumen master
 #include <M5Cardputer.h>
 #include <SD.h>
 #include <SPI.h>
 #include <vector>
 #include <algorithm>
+#include <math.h>
 
 #include "fingerprint.h"
 #include "signature_db.h"
@@ -26,6 +32,8 @@
 #include "ble_scanner.h"
 #include "alert_engine.h"
 #include "convoy_analyzer.h"
+#include "room_sweep.h"
+#include "export_module.h"
 
 #ifndef APP_VERSION
 #define APP_VERSION "dev"
@@ -49,6 +57,13 @@ constexpr int MAX_VISIBLE_ROWS = (SCREEN_H - LIST_TOP) / ROW_H;
 M5Canvas canvas(&M5Cardputer.Display);
 bool dirty = true;
 bool sdOk = false;
+
+enum class Screen : uint8_t { List, Radar };
+Screen screen = Screen::List;
+int cursorIndex = 0; // selección en la lista, solo usable con el scan pausado
+
+String toastMsg;        // feedback corto (ej. "exportado: ...") en el footer
+uint32_t toastUntilMs = 0;
 
 // Paleta compartida con el resto del repo (shell-rc, led-rc): fondo casi
 // negro, barra de HUD gris oscuro, acento rojo porque esto es una app de
@@ -185,6 +200,26 @@ void drawSignalBars(int x, int y, int rssi, uint16_t color)
     }
 }
 
+// Orden de la lista: primero los sospechosos de convoy (la alerta más
+// seria), después por RSSI desc. Compartido entre drawList() y la
+// selección por teclado -- ambos tienen que ver exactamente el mismo
+// orden, si no cursorIndex apunta a una fila distinta de la que se ve.
+std::vector<size_t> sortedOrder()
+{
+    size_t n = sightingstore::count();
+    std::vector<size_t> order(n);
+    for (size_t i = 0; i < n; i++) order[i] = i;
+    std::sort(order.begin(), order.end(), [](size_t a, size_t b) {
+        const sightingstore::Record *ra = sightingstore::byIndex(a);
+        const sightingstore::Record *rb = sightingstore::byIndex(b);
+        bool convoyA = convoyanalyzer::isSuspect(ra->fingerprintHash);
+        bool convoyB = convoyanalyzer::isSuspect(rb->fingerprintHash);
+        if (convoyA != convoyB) return convoyA;
+        return ra->lastRssi > rb->lastRssi;
+    });
+    return order;
+}
+
 void drawList()
 {
     canvas.fillRect(0, LIST_TOP, SCREEN_W, SCREEN_H - LIST_TOP, C_BG);
@@ -200,20 +235,8 @@ void drawList()
         return;
     }
 
-    // Copiamos índices y ordenamos: primero los sospechosos de convoy
-    // (posible seguimiento, la alerta más seria que tenemos), después por
-    // RSSI desc dentro de cada grupo. Sin tocar el store, es solo para esta
-    // pasada de dibujo.
-    std::vector<size_t> order(n);
-    for (size_t i = 0; i < n; i++) order[i] = i;
-    std::sort(order.begin(), order.end(), [](size_t a, size_t b) {
-        const sightingstore::Record *ra = sightingstore::byIndex(a);
-        const sightingstore::Record *rb = sightingstore::byIndex(b);
-        bool convoyA = convoyanalyzer::isSuspect(ra->fingerprintHash);
-        bool convoyB = convoyanalyzer::isSuspect(rb->fingerprintHash);
-        if (convoyA != convoyB) return convoyA;
-        return ra->lastRssi > rb->lastRssi;
-    });
+    std::vector<size_t> order = sortedOrder();
+    bool selectable = !blescanner::scanning();
 
     canvas.setFont(&fonts::Font0);
     size_t shown = std::min<size_t>(order.size(), MAX_VISIBLE_ROWS);
@@ -223,6 +246,9 @@ void drawList()
         int y = LIST_TOP + row * ROW_H;
         bool convoySuspect = convoyanalyzer::isSuspect(r->fingerprintHash);
         uint16_t color = categoryColor(r->category, r->confidenceLow);
+        bool sel = selectable && static_cast<int>(row) == cursorIndex;
+
+        if (sel) canvas.fillRect(0, y, SCREEN_W, ROW_H - 1, C_HUD);
 
         // Franja de color a la izquierda: distingue la fila de un vistazo
         // sin tener que leer el label, igual que la cruz de shell-rc. Un
@@ -230,20 +256,22 @@ void drawList()
         // más seria, no "este tipo de dispositivo".
         canvas.fillRect(0, y, 3, ROW_H - 1, convoySuspect ? C_ACCENT : color);
 
+        uint16_t rowBg = sel ? C_HUD : C_BG;
         canvas.setTextDatum(middle_left);
-        canvas.setTextColor(convoySuspect ? C_ACCENT : color, C_BG);
-        canvas.drawString(convoySuspect ? "!SIGUE" : categoryLabel(r->category), 6, y + ROW_H / 2);
+        canvas.setTextColor(convoySuspect ? C_ACCENT : color, rowBg);
+        canvas.drawString((sel ? "> " : "  ") + String(convoySuspect ? "!SIGUE" : categoryLabel(r->category)),
+                           6, y + ROW_H / 2);
 
-        canvas.setTextColor(C_DIM, C_BG);
+        canvas.setTextColor(C_DIM, rowBg);
         canvas.setTextDatum(middle_right);
         canvas.drawString(r->lastMac.substring(9), 148, y + ROW_H / 2); // últimos 3 octetos
         if (r->confidenceLow) canvas.drawString("?", 156, y + ROW_H / 2);
 
-        canvas.setTextColor(r->timesSeen > 1 ? C_TEXT : C_DIM, C_BG);
+        canvas.setTextColor(r->timesSeen > 1 ? C_TEXT : C_DIM, rowBg);
         canvas.drawString(String("x") + r->timesSeen, 184, y + ROW_H / 2);
 
         canvas.setTextDatum(middle_right);
-        canvas.setTextColor(C_DIM, C_BG);
+        canvas.setTextColor(C_DIM, rowBg);
         canvas.drawString(String(r->lastRssi), SCREEN_W - 24, y + ROW_H / 2);
         drawSignalBars(SCREEN_W - 18, y + 1, r->lastRssi, color);
     }
@@ -257,49 +285,200 @@ void drawFooter(const char *text)
     canvas.drawString(text, SCREEN_W / 2, SCREEN_H - 2);
 }
 
+// Pantalla de radar: seguir un dispositivo puntual vía RoomSweep. El
+// ángulo del punto es FIJO por fingerprint (derivado del hash, no cambia
+// nunca) -- lo único que varía con la señal es la distancia al centro.
+// A propósito: no tenemos información de dirección real, y variar el
+// ángulo además de la distancia sugeriría una posición que no podemos
+// conocer. El barrido giratorio es cosmético (relojero visual de "radar
+// en vivo"), no representa nada.
+void drawRadar()
+{
+    const sightingstore::Record *r = sightingstore::byFingerprint(roomsweep::followedHash());
+
+    canvas.setFont(&fonts::Font0);
+    canvas.setTextDatum(middle_left);
+    canvas.setTextColor(C_ACCENT, C_BG);
+    canvas.drawString("SIGUIENDO", 4, 8);
+    canvas.setTextDatum(middle_right);
+    canvas.setTextColor(C_DIM, C_BG);
+    canvas.drawString(r ? categoryLabel(r->category) : "?", SCREEN_W - 4, 8);
+
+    const int cx = SCREEN_W / 2;
+    const int cy = 66;
+    const int maxR = 42;
+
+    canvas.drawCircle(cx, cy, maxR, C_HUD);
+    canvas.drawCircle(cx, cy, maxR * 2 / 3, C_HUD);
+    canvas.drawCircle(cx, cy, maxR / 3, C_HUD);
+
+    float sweepAngle = (millis() % 3000) / 3000.0f * 2.0f * static_cast<float>(M_PI);
+    canvas.drawLine(cx, cy, cx + static_cast<int>(cosf(sweepAngle) * maxR),
+                     cy + static_cast<int>(sinf(sweepAngle) * maxR), C_HUD);
+
+    int8_t rssi = roomsweep::smoothedRssi();
+    // -95dBm (débil) -> borde del radar; -40dBm (fuerte) -> centro.
+    int rssiClamped = constrain(static_cast<int>(rssi), -95, -40);
+    int dist = maxR - (rssiClamped + 95) * (maxR - 4) / 55;
+
+    // Ángulo fijo derivado del hash: mismo dispositivo siempre en el mismo
+    // "rayo" del radar, así la vista no salta aunque no sepamos su
+    // dirección real.
+    float fixedAngle = (roomsweep::followedHash() % 360) * (static_cast<float>(M_PI) / 180.0f);
+    int bx = cx + static_cast<int>(cosf(fixedAngle) * dist);
+    int by = cy + static_cast<int>(sinf(fixedAngle) * dist);
+    canvas.fillCircle(bx, by, 4, C_ACCENT);
+
+    canvas.setTextDatum(middle_center);
+    canvas.setTextColor(C_TEXT, C_BG);
+    canvas.drawString(String(rssi) + " dBm", cx, cy + maxR + 12);
+
+    const char *trendStr = roomsweep::trend() == roomsweep::Trend::Closer ? "acercandose"
+                          : roomsweep::trend() == roomsweep::Trend::Farther ? "alejandose"
+                                                                             : "estable";
+    canvas.setTextColor(C_DIM, C_BG);
+    canvas.drawString(trendStr, cx, cy + maxR + 23);
+
+    if (r) {
+        canvas.setTextDatum(bottom_left);
+        canvas.setTextColor(C_DIM, C_BG);
+        canvas.drawString(r->lastMac, 4, SCREEN_H - 14);
+    }
+
+    canvas.setTextDatum(bottom_center);
+    canvas.setTextColor(C_WARN, C_BG);
+    canvas.drawString("senial relativa, no posicion real", cx, SCREEN_H - 14);
+}
+
 // En una zona con varios dispositivos, cada paquete de advertising (cada
 // ~100-1000ms por dispositivo) marca `dirty`. Sin throttle, la lista se
 // reordena por RSSI en cada uno de esos paquetes y el resultado es un
-// parpadeo/"scroll" constante. Redibujamos como máximo a este ritmo; el
-// flag `dirty` sigue en pie entre medio, así que no se pierde ningún
-// cambio, solo se agrupan.
-constexpr uint32_t RENDER_INTERVAL_MS = 300;
+// parpadeo/"scroll" constante. Redibujamos como máximo a este ritmo en la
+// lista; el flag `dirty` sigue en pie entre medio, así que no se pierde
+// ningún cambio, solo se agrupan. El radar necesita un ritmo más fino
+// porque el barrido giratorio es una animación continua, no solo una
+// reacción a datos nuevos.
+constexpr uint32_t LIST_RENDER_INTERVAL_MS = 300;
+constexpr uint32_t RADAR_RENDER_INTERVAL_MS = 60;
 
 void render()
 {
+    if (screen == Screen::Radar) dirty = true; // animación continua, no depende de nuevos avistamientos
+
     static uint32_t lastRenderMs = 0;
     uint32_t now = millis();
-    if (!dirty || (now - lastRenderMs < RENDER_INTERVAL_MS)) return;
+    uint32_t interval = screen == Screen::Radar ? RADAR_RENDER_INTERVAL_MS : LIST_RENDER_INTERVAL_MS;
+    if (!dirty || (now - lastRenderMs < interval)) return;
     lastRenderMs = now;
 
     canvas.fillScreen(C_BG);
+
+    if (screen == Screen::Radar) {
+        drawRadar();
+        drawFooter("del: volver");
+        canvas.pushSprite(0, 0);
+        dirty = false;
+        return;
+    }
+
     drawHud();
     drawStatusBar();
     drawList();
-    drawFooter("c: lugar   space: scan   +/- vol   G0: audio");
+
+    bool toastActive = toastMsg.length() > 0 && millis() < toastUntilMs;
+    if (toastActive) {
+        drawFooter(toastMsg.c_str());
+    } else if (!blescanner::scanning() && sightingstore::count() > 0) {
+        drawFooter("; . mover   enter: seguir   e: exportar   space: scan");
+    } else {
+        drawFooter("c: lugar   space: scan   +/- vol   G0: audio");
+    }
     canvas.pushSprite(0, 0);
     dirty = false;
 }
 
 // --- Entrada -----------------------------------------------------------------------
 
+bool hasChar(const Keyboard_Class::KeysState &ks, const char *chars)
+{
+    for (char c : ks.word) {
+        if (strchr(chars, c)) return true;
+    }
+    return false;
+}
+
+void showToast(const String &msg, uint32_t durationMs = 2500)
+{
+    toastMsg = msg;
+    toastUntilMs = millis() + durationMs;
+    dirty = true;
+}
+
 void handleKeyboard()
 {
     if (!M5Cardputer.Keyboard.isChange() || !M5Cardputer.Keyboard.isPressed()) return;
-    auto st = M5Cardputer.Keyboard.keysState();
-    for (char c : st.word) {
-        if (c == '+') {
-            alertengine::setMasterVolume(std::min(255, alertengine::masterVolume() + 20));
-            dirty = true;
-        } else if (c == '-') {
-            alertengine::setMasterVolume(std::max(0, alertengine::masterVolume() - 20));
-            dirty = true;
-        } else if (c == ' ') {
-            if (blescanner::scanning()) blescanner::stop();
-            else blescanner::start();
-            dirty = true;
-        } else if (c == 'c') {
-            convoyanalyzer::markNewContext();
+    auto ks = M5Cardputer.Keyboard.keysState();
+
+    if (hasChar(ks, "+")) {
+        alertengine::setMasterVolume(std::min(255, alertengine::masterVolume() + 20));
+        dirty = true;
+    }
+    if (hasChar(ks, "-")) {
+        alertengine::setMasterVolume(std::max(0, alertengine::masterVolume() - 20));
+        dirty = true;
+    }
+    if (hasChar(ks, " ")) {
+        if (blescanner::scanning()) blescanner::stop();
+        else blescanner::start();
+        dirty = true;
+    }
+    if (hasChar(ks, "c")) {
+        convoyanalyzer::markNewContext();
+        dirty = true;
+    }
+    if (hasChar(ks, "e")) {
+        String base = exportmodule::exportNow();
+        showToast(base.length() ? ("exportado: " + base) : "sin SD, no exporte");
+    }
+
+    if (screen == Screen::List) {
+        // Selección solo con el scan pausado: la lista queda congelada
+        // (nada nuevo llega de blescanner), así cursorIndex apunta siempre
+        // a la misma fila mientras el usuario navega.
+        if (!blescanner::scanning()) {
+            size_t n = sightingstore::count();
+            if (n > 0) {
+                int maxIndex = static_cast<int>(std::min(n, static_cast<size_t>(MAX_VISIBLE_ROWS))) - 1;
+                if (cursorIndex > maxIndex) cursorIndex = maxIndex;
+                if (cursorIndex < 0) cursorIndex = 0;
+                if (hasChar(ks, ";w") && cursorIndex > 0) {
+                    cursorIndex--;
+                    dirty = true;
+                }
+                if (hasChar(ks, ".s") && cursorIndex < maxIndex) {
+                    cursorIndex++;
+                    dirty = true;
+                }
+                if (ks.enter) {
+                    std::vector<size_t> order = sortedOrder();
+                    if (cursorIndex < static_cast<int>(order.size())) {
+                        const sightingstore::Record *r = sightingstore::byIndex(order[cursorIndex]);
+                        if (r) {
+                            roomsweep::follow(r->fingerprintHash);
+                            screen = Screen::Radar;
+                            // El radar necesita datos en vivo -- si el usuario
+                            // pausó para seleccionar, lo reanudamos acá.
+                            if (!blescanner::scanning()) blescanner::start();
+                            dirty = true;
+                        }
+                    }
+                }
+            }
+        }
+    } else if (screen == Screen::Radar) {
+        if (ks.del) {
+            roomsweep::stop();
+            screen = Screen::List;
             dirty = true;
         }
     }
@@ -362,6 +541,10 @@ void processSightings()
             alertengine::trigger(signaturedb::AlertProfile::ConvoySuspect, fp.hash);
         }
 
+        // Si estamos siguiendo este fingerprint en el radar, cada paquete
+        // (no solo New/Update) alimenta la ventana corta de RoomSweep.
+        roomsweep::sample(fp.hash, raw.rssi);
+
         dirty = true;
     }
 }
@@ -380,6 +563,8 @@ void setup()
     sightingstore::begin(sdOk);
     alertengine::begin();
     convoyanalyzer::begin();
+    roomsweep::begin();
+    exportmodule::begin(sdOk);
     blescanner::begin();
     blescanner::start();
 }

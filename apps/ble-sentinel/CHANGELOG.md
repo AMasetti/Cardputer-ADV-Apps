@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0]
+- Nuevo: selección en la lista con el scan pausado (`;`/`.` mover,
+  `enter` elegir) y pantalla de radar (`RoomSweep`) para seguir un
+  dispositivo puntual vía RSSI -- ángulo fijo por fingerprint, solo la
+  distancia al centro varía con la señal, con indicador de tendencia
+  (acercándose/alejándose/estable). `del` vuelve a la lista.
+- Nuevo: exportación a SD con la tecla `e` -- CSV + JSON del
+  sighting_store actual, con hash SHA-256 de integridad al lado de cada
+  archivo y un log de exports.
+- Pendiente, no implementado todavía: WiFiSniffer (correlación BLE+WiFi)
+  y soporte de RTC por Grove -- motivos documentados en la spec.
+
 ## [0.2.0]
 - Nuevo: ConvoyAnalyzer (detección de seguimiento sostenido). Tecla `c`
   marca "cambié de lugar"; un dispositivo visto en 3+ lugares distintos

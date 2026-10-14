@@ -8,14 +8,20 @@
 //
 // RSSI de BLE real salta 10-15dBm aunque el dispositivo esté quieto y
 // cerca (multipath, orientación de antena, el propio cuerpo bloqueando la
-// señal) -- eso es física de RF, no un bug. v1 calculaba tendencia
-// comparando la primera mitad contra la segunda mitad de solo 8 muestras
-// crudas con una zona muerta de 3dBm: con ese nivel de ruido normal,
-// cualquier paquete puntual alcanzaba para voltear el resultado (decía
-// "acercándose" estando lejos y viceversa). v2 usa dos promedios móviles
-// exponenciales (rápido y lento, ver .cpp) y compara la diferencia entre
-// ellos -- un solo paquete ruidoso ya no alcanza para mover la aguja,
-// hace falta una tendencia sostenida de varios paquetes.
+// señal) -- eso es física de RF, no un bug. v1 y v2 intentaron clasificar
+// eso en "acercándose/estable/alejándose" (primero con un split de
+// ventana cruda, después con cruce de EMA) y en uso real seguía siendo
+// errático parado quieto -- un umbral categórico sobre una señal ruidosa
+// SIEMPRE va a tener casos límite que parpadean, no importa cuánto se
+// ajuste la zona muerta.
+//
+// v3 deja de clasificar y en cambio dibuja una magnitud continua: una
+// burbuja que crece/achica con la señal filtrada (`proximityFraction()`),
+// estilo "Find Nearby" de Apple para AirTags. Sin estados discretos no
+// hay nada que "parpadee" -- en el peor caso la burbuja tiembla un poco,
+// que es honesto (la señal de verdad tiembla) en vez de afirmar
+// categóricamente algo que puede estar mal. `trend()`/`smoothedRssi()`
+// quedan solo como lectura de debug, no para la UI principal.
 //
 // También ofrece un modo de tono continuo (frecuencia sube cuanto más
 // cerca, estilo detector de metales) para buscar sin tener que mirar la
@@ -47,8 +53,15 @@ void sample(uint64_t fingerprintHash, int8_t rssi);
 
 // EMA rápida (ver .cpp) -- se mueve más que un promedio de ventana larga
 // pero no tiembla con cada paquete individual como el RSSI crudo.
+// SOLO DEBUG: ya no maneja la UI principal (ver header).
 int8_t smoothedRssi();
 Trend trend();
+
+// Fracción [0.0, 1.0] de "qué tan cerca" según una EMA lenta propia,
+// mapeada linealmente entre -95dBm (0.0, lejos/sin señal útil) y -40dBm
+// (1.0, prácticamente al lado). Esto es lo que maneja la burbuja en la UI.
+// 0.0 si todavía no hay ninguna muestra.
+float proximityFraction();
 
 // Historial crudo (sin promediar) para el sparkline. Índice 0 = muestra
 // más vieja de la ventana, historyCount()-1 = la más nueva.

@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.8.0]
+- Rediseño de la pantalla de Seguimiento: la clasificación discreta
+  "acercándose/estable/alejándose" (v1 con split de ventana cruda, v2 en
+  0.7.1 con cruce de EMA) seguía siendo errática en uso real -- parado
+  quieto al lado del propio dispositivo, alternaba entre los tres estados.
+  Causa de fondo: cualquier umbral categórico sobre una señal con 10-15dBm
+  de ruido normal de RF SIEMPRE va a tener casos límite que parpadean, no
+  importa cuánto se ajuste la zona muerta -- no era un bug de calibración,
+  era el enfoque equivocado.
+- Reemplazado por una burbuja continua que crece/achica con la señal
+  filtrada (una tercera EMA propia, `proximityFraction()`, más lenta que
+  las de debug), estilo "Find Nearby" de Apple para AirTags: un anillo
+  exterior fijo marca el "objetivo", la burbuja interior se acerca a su
+  tamaño a medida que la señal mejora, y se pone verde al estar muy cerca.
+  Sin estados discretos no hay nada que "parpadee" categóricamente -- en
+  el peor caso la burbuja tiembla un poco, que es honesto (la señal de
+  verdad tiembla).
+- El número grande + sparkline + texto de tendencia se sacaron de la UI
+  principal; el dBm crudo queda chico y abajo, solo para debug.
+  `trend()`/`smoothedRssi()` en `room_sweep.h` ahora están documentados
+  explícitamente como debug-only.
+
 ## [0.7.1]
 - Fix: la tendencia en la pantalla de Seguimiento era errática (decía
   "acercándose" lejos del dispositivo y viceversa). Causa real: RSSI de

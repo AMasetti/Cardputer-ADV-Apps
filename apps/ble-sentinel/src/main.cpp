@@ -434,12 +434,13 @@ void drawDetail()
     }
 }
 
-// Pantalla de seguimiento: número grande + sparkline de RSSI, en vez de
-// un radar. Un radar implica dirección/posición que no tenemos -- esto
-// es honestamente una sola dimensión (más fuerte = más cerca), y un
-// número + gráfico de tendencia la representa sin inventar nada. Tono
-// continuo opcional (toggle con G0 corto) para buscar sin mirar la
-// pantalla, estilo detector de metales.
+// Pantalla de seguimiento: burbuja que crece/achica con la señal filtrada,
+// estilo "Find Nearby" de Apple para AirTags, en vez de clasificar en
+// estados discretos. Un radar implica dirección/posición que no tenemos;
+// un texto de tendencia (v1/v2) resultó errático contra RSSI real (ver
+// room_sweep.h) -- una magnitud continua no tiene estados que "parpadeen".
+// El dBm crudo queda chico y abajo, solo para debug. Tono continuo opcional
+// (toggle con G0 corto) para buscar sin mirar la pantalla.
 void drawFollow()
 {
     const sightingstore::Record *r = sightingstore::byFingerprint(roomsweep::followedHash());
@@ -453,51 +454,50 @@ void drawFollow()
     canvas.drawString(r ? categoryLabel(r->category) : "?", SCREEN_W - 4, 8);
     canvas.drawFastHLine(0, 16, SCREEN_W, C_HUD);
 
-    int8_t rssi = roomsweep::smoothedRssi();
-    const char *trendStr = roomsweep::trend() == roomsweep::Trend::Closer ? "acercandose"
-                          : roomsweep::trend() == roomsweep::Trend::Farther ? "alejandose"
-                                                                             : "estable";
-    uint16_t trendColor = roomsweep::trend() == roomsweep::Trend::Closer ? C_ON
-                         : roomsweep::trend() == roomsweep::Trend::Farther ? C_ACCENT
-                                                                            : C_DIM;
+    const int cx = SCREEN_W / 2;
+    const int cy = 68;
+    const int maxR = 46;
+    const int minR = 4; // nunca desaparece del todo -- "sin señal" sigue siendo un estado, no la nada
 
-    // Número grande: lo que de verdad importa cuando estás caminando y
-    // mirás de reojo, igual que el tuner con la nota.
-    canvas.setFont(&fonts::DejaVu40);
-    canvas.setTextDatum(middle_center);
-    canvas.setTextColor(C_TEXT, C_BG);
-    canvas.drawString(String(rssi), SCREEN_W / 2, 50);
-
-    canvas.setFont(&fonts::Font0);
-    canvas.setTextColor(C_DIM, C_BG);
-    canvas.drawString("dBm", SCREEN_W / 2, 76);
-
-    canvas.setTextColor(trendColor, C_BG);
-    canvas.drawString(trendStr, SCREEN_W / 2, 88);
-
-    // Sparkline: últimas HISTORY_LEN muestras crudas (sin promediar, para
-    // que se vea el ruido real) en una franja angosta.
-    const int sparkX = 20, sparkY = 98, sparkW = SCREEN_W - 40, sparkH = 20;
-    canvas.drawRect(sparkX, sparkY, sparkW, sparkH, C_HUD);
-    size_t hn = roomsweep::historyCount();
-    if (hn >= 2) {
-        int prevX = 0, prevY = 0;
-        for (size_t i = 0; i < hn; i++) {
-            int rv = constrain(static_cast<int>(roomsweep::historyAt(i)), -95, -40);
-            int px = sparkX + static_cast<int>(i) * (sparkW - 1) / static_cast<int>(hn - 1);
-            int py = sparkY + sparkH - 1 - (rv + 95) * (sparkH - 1) / 55;
-            if (i > 0) canvas.drawLine(prevX, prevY, px, py, C_ACCENT);
-            prevX = px;
-            prevY = py;
-        }
+    // Radio mostrado: se desliza hacia el objetivo (maxR * fracción) en vez
+    // de saltar de golpe en cada frame -- el filtro ya está en la EMA de
+    // proximityFraction(), esto es solo para que la animación se vea fluida
+    // a 60ms/frame en vez de temblar pixel a pixel. Se reinicia de golpe si
+    // cambió el dispositivo seguido, para no animar desde una sesión vieja.
+    static float displayR = minR;
+    static uint64_t lastHash = 0;
+    uint64_t hash = roomsweep::followedHash();
+    if (hash != lastHash) {
+        displayR = minR;
+        lastHash = hash;
     }
+
+    float frac = roomsweep::proximityFraction();
+    float targetR = minR + frac * (maxR - minR);
+    displayR += (targetR - displayR) * 0.25f;
+
+    // Anillo exterior fijo = el "objetivo": cuando la burbuja interior lo
+    // alcanza, estás tan cerca como el RSSI puede indicar.
+    canvas.drawCircle(cx, cy, maxR, C_HUD);
+
+    bool veryClose = frac > 0.85f;
+    uint16_t bubbleColor = veryClose ? C_ON : C_ACCENT;
+    int r = static_cast<int>(displayR + 0.5f);
+    if (r < minR) r = minR;
+    canvas.fillCircle(cx, cy, r, bubbleColor);
+
+    // Lectura cruda chica abajo de la burbuja -- solo para debug, ya no es
+    // la UI principal (ver room_sweep.h: el número solo no dice nada útil).
+    canvas.setFont(&fonts::Font0);
+    canvas.setTextDatum(middle_center);
+    canvas.setTextColor(C_DIM, C_BG);
+    canvas.drawString(String(roomsweep::smoothedRssi()) + " dBm", cx, 112);
 
     // Indicador de tono: toggle con G0 corto (no mantenido, eso es el
     // mute global). Mostramos el estado para que no quede como magia.
-    canvas.setTextDatum(middle_center);
     canvas.setTextColor(roomsweep::toneMode() ? C_ON : C_DIM, C_BG);
     canvas.drawString(roomsweep::toneMode() ? "tono: ON (g0 apaga)" : "g0 corto: tono de busqueda",
-                       SCREEN_W / 2, 124);
+                       cx, 124);
 }
 
 // En una zona con varios dispositivos, cada paquete de advertising (cada

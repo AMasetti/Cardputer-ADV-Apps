@@ -92,23 +92,40 @@ el ángulo no significara nada. RSSI es una sola dimensión (distancia
 aproximada) -- darle forma de mapa 2D es la interfaz engañosa, no la
 honesta, por más cartel de disclaimer que tenga encima. Se reemplazó por:
 
-- **Número grande** (RSSI suavizado) + **sparkline** de las últimas 8
-  muestras crudas (sin promediar, para que se vea el ruido real) + texto
-  de tendencia.
-- `roomsweep::trend()` -- **bug real corregido en v0.7.1.** La versión
-  original comparaba la primera mitad contra la segunda mitad de la
-  ventana cruda de 8 muestras con una zona muerta de 3dBm. RSSI de BLE
-  real salta 10-15dBm aunque el dispositivo esté quieto y cerca (física
-  de RF normal: multipath, orientación de antena, el propio cuerpo) --
-  con ese ruido, un solo paquete puntual alcanzaba para voltear el
-  resultado ("acercándose" estando lejos y viceversa, reportado por el
-  usuario). Reemplazado por dos EMA (promedio móvil exponencial, alpha
-  0.35 rápida / 0.06 lenta) con zona muerta de 2.5dBm sobre la
-  **diferencia entre ambas**, no sobre el RSSI crudo: al estar las dos
-  filtradas, hace falta una tendencia sostenida de varios paquetes para
-  que la diferencia supere la zona muerta, un outlier aislado ya no
-  alcanza. `smoothedRssi()` (el número grande) también pasó a devolver
-  la EMA rápida en vez de un promedio simple de ventana.
+- **v1 (número grande + sparkline + texto de tendencia) y v2 (0.7.1,
+  cruce de EMA) se descartaron -- ambas erráticas en uso real, no solo
+  bugs de calibración.** v1 comparaba la primera mitad contra la segunda
+  mitad de la ventana cruda de 8 muestras con zona muerta de 3dBm; un
+  solo paquete ruidoso alcanzaba para voltear el resultado. v2 reemplazó
+  eso por dos EMA (alpha 0.35 rápida / 0.06 lenta) con zona muerta de
+  2.5dBm sobre la diferencia entre ambas -- mejoró pero el usuario
+  reportó que **seguía alternando entre "acercándose/estable/alejándose"
+  parado quieto al lado del propio dispositivo**. Diagnóstico de fondo:
+  RSSI de BLE real salta 10-15dBm aunque el dispositivo esté quieto y
+  cerca (multipath, orientación de antena, el propio cuerpo bloqueando
+  la señal -- física de RF normal, no un bug), y **cualquier umbral
+  categórico sobre una señal así de ruidosa siempre va a tener casos
+  límite que parpadean**, sin importar cuánto se ajuste la zona muerta o
+  qué tan lentos sean los filtros. Ajustar el threshold una tercera vez
+  no iba a arreglar un problema de forma, no de calibración.
+- **v3 (0.8.0, actual): burbuja continua en vez de clasificación
+  discreta**, estilo "Find Nearby" de Apple para AirTags. Una tercera EMA
+  propia (`proximityFraction()` en `room_sweep.cpp`, alpha 0.05,
+  desacoplada de las EMA de debug) se mapea linealmente de -95dBm (0.0) a
+  -40dBm (1.0). En `drawFollow()`: un anillo exterior fijo marca el
+  "objetivo" (radio máximo), y un círculo interior relleno cuyo radio
+  mostrado se desliza (lerp, factor 0.25 por frame a 60ms) hacia
+  `maxR * proximityFraction()` -- la animación se reinicia de golpe si
+  cambia el `followedHash()` seguido, para no animar desde una sesión
+  vieja. El círculo se pone verde (`C_ON`) cuando `proximityFraction() >
+  0.85` como señal de "lo encontraste", igual que el "Find Nearby" de
+  Apple. Sin estados discretos no hay nada que clasificar mal -- en el
+  peor caso la burbuja tiembla un poco en vez de afirmar categóricamente
+  algo que puede estar mal, y eso es honesto (la señal de verdad tiembla).
+  El número grande, el sparkline y el texto de tendencia se sacaron de la
+  UI principal; `smoothedRssi()` y `trend()` siguen existiendo pero
+  documentados como debug-only (el dBm crudo queda chico y abajo de la
+  burbuja, solo de referencia).
 - **Tono de audio continuo opcional** (frecuencia sube cuanto más cerca,
   300-1800Hz mapeado a -95/-40dBm), para buscar sin mirar la pantalla --
   estilo detector de metales. Toggle con **G0 corto** (soltado antes del

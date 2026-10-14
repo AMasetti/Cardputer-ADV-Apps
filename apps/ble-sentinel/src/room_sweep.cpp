@@ -29,6 +29,17 @@ float g_emaFast = 0.0f;
 float g_emaSlow = 0.0f;
 bool g_emaInit = false; // false hasta la primera muestra, para no arrancar en 0
 
+// EMA propia para la burbuja -- deliberadamente más lenta que g_emaFast:
+// la burbuja es la UI principal ahora, así que prioriza que se mueva
+// suave y con confianza por sobre reaccionar rápido. No comparte estado
+// con g_emaFast/g_emaSlow (esas quedan solo para trend()/debug) para que
+// ajustar una no afecte a la otra.
+constexpr float EMA_BUBBLE_ALPHA = 0.05f;
+constexpr float BUBBLE_RSSI_MIN = -95.0f; // fracción 0.0
+constexpr float BUBBLE_RSSI_MAX = -40.0f; // fracción 1.0
+float g_emaBubble = 0.0f;
+bool g_bubbleInit = false;
+
 uint64_t g_followedHash = 0;
 bool g_following = false;
 
@@ -56,6 +67,7 @@ void begin()
     g_followedHash = 0;
     g_historyCount = 0;
     g_emaInit = false;
+    g_bubbleInit = false;
     g_toneMode = false;
     silenceTone();
 }
@@ -66,6 +78,7 @@ void follow(uint64_t fingerprintHash)
     g_following = true;
     g_historyCount = 0;
     g_emaInit = false;
+    g_bubbleInit = false;
 }
 
 void stop()
@@ -101,6 +114,13 @@ void sample(uint64_t fingerprintHash, int8_t rssi)
         g_emaFast = EMA_FAST_ALPHA * rssi + (1.0f - EMA_FAST_ALPHA) * g_emaFast;
         g_emaSlow = EMA_SLOW_ALPHA * rssi + (1.0f - EMA_SLOW_ALPHA) * g_emaSlow;
     }
+
+    if (!g_bubbleInit) {
+        g_emaBubble = static_cast<float>(rssi);
+        g_bubbleInit = true;
+    } else {
+        g_emaBubble = EMA_BUBBLE_ALPHA * rssi + (1.0f - EMA_BUBBLE_ALPHA) * g_emaBubble;
+    }
 }
 
 int8_t smoothedRssi()
@@ -124,6 +144,14 @@ Trend trend()
     if (delta > TREND_DEAD_ZONE_DBM) return Trend::Closer;
     if (delta < -TREND_DEAD_ZONE_DBM) return Trend::Farther;
     return Trend::Stable;
+}
+
+float proximityFraction()
+{
+    if (!g_bubbleInit) return 0.0f;
+    float clamped = g_emaBubble < BUBBLE_RSSI_MIN ? BUBBLE_RSSI_MIN
+                     : (g_emaBubble > BUBBLE_RSSI_MAX ? BUBBLE_RSSI_MAX : g_emaBubble);
+    return (clamped - BUBBLE_RSSI_MIN) / (BUBBLE_RSSI_MAX - BUBBLE_RSSI_MIN);
 }
 
 size_t historyCount() { return g_historyCount; }

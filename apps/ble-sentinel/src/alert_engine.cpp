@@ -69,7 +69,9 @@ struct PendingPattern {
 };
 PendingPattern pending;
 
-bool g_enabled = true;
+// Arranca en mute: el audio lo activa explícitamente G0 (ver main.cpp), no
+// queda sonando por defecto apenas se prende la app.
+bool g_enabled = false;
 uint8_t g_masterVolume = 180; // 0-255, mismo rango que M5Cardputer.Speaker
 
 void startPattern(const Profile &p)

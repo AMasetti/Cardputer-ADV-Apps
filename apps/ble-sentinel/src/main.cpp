@@ -7,9 +7,9 @@
 // Pendiente para próximas versiones: ConvoyAnalyzer, RoomSweepEngine,
 // WiFiSniffer, ExportModule, soporte de RTC por Grove.
 //
-// Teclas:
-//   m   silenciar/activar alertas de audio
-//   +/- volumen master
+// Controles:
+//   G0 (mantenido ~0.8s)  activar/silenciar alertas de audio (arranca en mute)
+//   +/-                   volumen master
 #include <M5Cardputer.h>
 #include <SD.h>
 #include <SPI.h>
@@ -35,13 +35,20 @@ constexpr int SD_CS = 12;
 
 constexpr int SCREEN_W = 240;
 constexpr int SCREEN_H = 135;
-constexpr int ROW_H = 11;
-constexpr int LIST_TOP = 24;
+constexpr int HUD_H = 15;
+constexpr int STATUS_H = 13;
+constexpr int ROW_H = 12;
+constexpr int LIST_TOP = HUD_H + STATUS_H;
 constexpr int MAX_VISIBLE_ROWS = (SCREEN_H - LIST_TOP) / ROW_H;
 
 M5Canvas canvas(&M5Cardputer.Display);
 bool dirty = true;
-String statusMsg;
+bool sdOk = false;
+
+// Paleta compartida con el resto del repo (shell-rc, led-rc): fondo casi
+// negro, barra de HUD gris oscuro, acento rojo porque esto es una app de
+// seguridad (alarma), verde/gris para "todo tranquilo".
+uint16_t C_BG, C_HUD, C_TEXT, C_DIM, C_ACCENT, C_ON, C_OFF, C_WARN;
 
 const char *categoryLabel(signaturedb::Category c)
 {
@@ -58,11 +65,11 @@ uint16_t categoryColor(signaturedb::Category c, bool confidenceLow)
     switch (c) {
         case signaturedb::Category::SmartGlasses:
         case signaturedb::Category::DroneRemoteId:
-            return confidenceLow ? TFT_ORANGE : TFT_RED;
+            return confidenceLow ? C_WARN : C_ACCENT;
         case signaturedb::Category::Headset:
-            return TFT_DARKGREY;
+            return C_DIM;
         default:
-            return TFT_YELLOW; // sin match -> tratado como sospechoso, ver signature_db.h
+            return C_ACCENT; // sin match -> tratado como sospechoso, ver signature_db.h
     }
 }
 
@@ -91,31 +98,99 @@ Resolved resolve(const blescanner::RawSighting &raw, bool fpConfidenceLow)
 bool initSdCard()
 {
     SPI.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
-    bool ok = SD.begin(SD_CS, SPI, 25000000);
     // Degradado explícito si falla: seguimos funcionando, solo que sin log
     // persistente ni session_id continuo (ver sighting_store.h).
-    statusMsg = ok ? "SD ok" : "SD ausente: sin log";
-    return ok;
+    return SD.begin(SD_CS, SPI, 25000000);
 }
 
-void drawHeader()
+void initColors()
 {
-    canvas.fillRect(0, 0, SCREEN_W, LIST_TOP, TFT_NAVY);
-    canvas.setTextColor(TFT_WHITE, TFT_NAVY);
+    C_BG = canvas.color565(10, 10, 14);
+    C_HUD = canvas.color565(32, 28, 30);
+    C_TEXT = canvas.color565(225, 225, 230);
+    C_DIM = canvas.color565(120, 120, 130);
+    C_ACCENT = canvas.color565(221, 29, 33);   // rojo: esto es una alarma
+    C_ON = canvas.color565(80, 210, 110);      // verde: audio activo / ok
+    C_OFF = canvas.color565(50, 50, 58);
+    C_WARN = canvas.color565(230, 160, 40);    // ámbar: firma sin verificar
+}
+
+// --- Dibujo ------------------------------------------------------------------------
+
+void drawHud()
+{
+    canvas.fillRect(0, 0, SCREEN_W, HUD_H, C_HUD);
+    canvas.setFont(&fonts::Font0);
     canvas.setTextSize(1);
-    canvas.setCursor(4, 2);
-    canvas.printf("BLE Sentinel v%s  [%s]", APP_VERSION,
-                   blescanner::scanning() ? "scan" : "stop");
-    canvas.setCursor(4, 12);
-    canvas.printf("audio:%s vol:%u  %s", alertengine::enabled() ? "on" : "off",
-                   alertengine::masterVolume(), statusMsg.c_str());
+    canvas.setTextColor(C_ACCENT, C_HUD);
+    canvas.setTextDatum(middle_left);
+    canvas.drawString("SENTINEL", 4, HUD_H / 2);
+    canvas.setTextColor(C_TEXT, C_HUD);
+    canvas.setTextDatum(middle_center);
+    canvas.drawString(blescanner::scanning() ? "escaneando" : "detenido", SCREEN_W / 2, HUD_H / 2);
+    canvas.setTextColor(C_DIM, C_HUD);
+    canvas.setTextDatum(middle_right);
+    canvas.drawString("v" APP_VERSION, SCREEN_W - 4, HUD_H / 2);
+}
+
+// Chip tipo "pill" igual al de shell-rc/led-rc: rótulo con fondo lleno
+// cuando está "on", borde nomás cuando está "off".
+void drawChip(int x, int y, int w, const char *label, bool on, uint16_t onColor)
+{
+    canvas.fillRoundRect(x, y, w, 11, 3, on ? onColor : C_BG);
+    if (!on) canvas.drawRoundRect(x, y, w, 11, 3, C_DIM);
+    canvas.setTextDatum(middle_center);
+    canvas.setFont(&fonts::Font0);
+    canvas.setTextColor(on ? C_BG : C_DIM, on ? onColor : C_BG);
+    canvas.drawString(label, x + w / 2, y + 6);
+}
+
+void drawStatusBar()
+{
+    canvas.fillRect(0, HUD_H, SCREEN_W, STATUS_H, C_BG);
+    int y = HUD_H + 1;
+    drawChip(4, y, 46, alertengine::enabled() ? "AUDIO ON" : "MUTE", alertengine::enabled(), C_ON);
+    drawChip(54, y, 36, sdOk ? "SD OK" : "SD --", sdOk, C_ON);
+
+    canvas.setTextDatum(middle_right);
+    canvas.setTextColor(C_DIM, C_BG);
+    canvas.drawString(String("vol ") + (alertengine::masterVolume() * 100 / 255) + "%",
+                       SCREEN_W - 44, y + 6);
+
+    char ses[12];
+    if (sightingstore::sdAvailable()) {
+        snprintf(ses, sizeof(ses), "#%lu", static_cast<unsigned long>(sightingstore::sessionId()));
+    } else {
+        snprintf(ses, sizeof(ses), "--");
+    }
+    canvas.drawString(ses, SCREEN_W - 4, y + 6);
+}
+
+// Barras de señal, mismo criterio que shell-rc: -90dBm (nada) a -50dBm (llena).
+void drawSignalBars(int x, int y, int rssi, uint16_t color)
+{
+    int bars = constrain((rssi + 90) / 10, 0, 4);
+    for (int b = 0; b < 4; b++) {
+        int h = 2 + b * 2;
+        canvas.fillRect(x + b * 4, y + 9 - h, 3, h, b < bars ? color : C_OFF);
+    }
 }
 
 void drawList()
 {
-    canvas.fillRect(0, LIST_TOP, SCREEN_W, SCREEN_H - LIST_TOP, TFT_BLACK);
+    canvas.fillRect(0, LIST_TOP, SCREEN_W, SCREEN_H - LIST_TOP, C_BG);
 
     size_t n = sightingstore::count();
+
+    if (n == 0) {
+        canvas.setFont(&fonts::Font0);
+        canvas.setTextDatum(middle_center);
+        canvas.setTextColor(C_DIM, C_BG);
+        canvas.drawString(blescanner::scanning() ? "Escaneando..." : "Scan detenido",
+                           SCREEN_W / 2, LIST_TOP + (SCREEN_H - LIST_TOP) / 2);
+        return;
+    }
+
     // Copiamos índices y ordenamos por RSSI desc (más cerca arriba) sin
     // tocar el store -- es solo para esta pasada de dibujo.
     std::vector<size_t> order(n);
@@ -124,50 +199,91 @@ void drawList()
         return sightingstore::byIndex(a)->lastRssi > sightingstore::byIndex(b)->lastRssi;
     });
 
-    canvas.setTextSize(1);
+    canvas.setFont(&fonts::Font0);
     size_t shown = std::min<size_t>(order.size(), MAX_VISIBLE_ROWS);
     for (size_t row = 0; row < shown; row++) {
         const sightingstore::Record *r = sightingstore::byIndex(order[row]);
         if (!r) continue;
         int y = LIST_TOP + row * ROW_H;
-        canvas.setTextColor(categoryColor(r->category, r->confidenceLow), TFT_BLACK);
-        canvas.setCursor(2, y);
-        canvas.printf("%-8s %4ddBm x%-3u %s%s", categoryLabel(r->category),
-                       r->lastRssi, r->timesSeen, r->lastMac.c_str(),
-                       r->confidenceLow ? " ?" : "");
-    }
+        uint16_t color = categoryColor(r->category, r->confidenceLow);
 
-    if (n == 0) {
-        canvas.setTextColor(TFT_DARKGREY, TFT_BLACK);
-        canvas.setCursor(4, LIST_TOP + 4);
-        canvas.print("Escaneando...");
+        // Franja de color a la izquierda: distingue la fila de un vistazo
+        // sin tener que leer el label, igual que la cruz de shell-rc.
+        canvas.fillRect(0, y, 3, ROW_H - 1, color);
+
+        canvas.setTextDatum(middle_left);
+        canvas.setTextColor(color, C_BG);
+        canvas.drawString(categoryLabel(r->category), 6, y + ROW_H / 2);
+
+        canvas.setTextColor(C_DIM, C_BG);
+        canvas.setTextDatum(middle_right);
+        canvas.drawString(r->lastMac.substring(9), 148, y + ROW_H / 2); // últimos 3 octetos
+        if (r->confidenceLow) canvas.drawString("?", 156, y + ROW_H / 2);
+
+        canvas.setTextColor(r->timesSeen > 1 ? C_TEXT : C_DIM, C_BG);
+        canvas.drawString(String("x") + r->timesSeen, 184, y + ROW_H / 2);
+
+        canvas.setTextDatum(middle_right);
+        canvas.setTextColor(C_DIM, C_BG);
+        canvas.drawString(String(r->lastRssi), SCREEN_W - 24, y + ROW_H / 2);
+        drawSignalBars(SCREEN_W - 18, y + 1, r->lastRssi, color);
     }
+}
+
+void drawFooter(const char *text)
+{
+    canvas.setFont(&fonts::Font0);
+    canvas.setTextDatum(bottom_center);
+    canvas.setTextColor(C_DIM, C_BG);
+    canvas.drawString(text, SCREEN_W / 2, SCREEN_H - 2);
 }
 
 void render()
 {
     if (!dirty) return;
-    drawHeader();
+    canvas.fillScreen(C_BG);
+    drawHud();
+    drawStatusBar();
     drawList();
+    drawFooter("+/- volumen   G0 mant.: audio");
     canvas.pushSprite(0, 0);
     dirty = false;
 }
+
+// --- Entrada -----------------------------------------------------------------------
 
 void handleKeyboard()
 {
     if (!M5Cardputer.Keyboard.isChange() || !M5Cardputer.Keyboard.isPressed()) return;
     auto st = M5Cardputer.Keyboard.keysState();
     for (char c : st.word) {
-        if (c == 'm') {
-            alertengine::setEnabled(!alertengine::enabled());
-            dirty = true;
-        } else if (c == '+') {
+        if (c == '+') {
             alertengine::setMasterVolume(std::min(255, alertengine::masterVolume() + 20));
             dirty = true;
         } else if (c == '-') {
             alertengine::setMasterVolume(std::max(0, alertengine::masterVolume() - 20));
             dirty = true;
         }
+    }
+}
+
+constexpr uint32_t G0_LONG_PRESS_MS = 800;
+
+// G0 (BtnA) mantenido activa/desactiva el audio. Arranca en mute (ver
+// alert_engine.cpp) -- esto es la única forma de prenderlo, no hay tecla.
+// `handled` evita que se togglee varias veces mientras el botón sigue
+// apretado: un solo toggle por mantenido, igual que el patrón de `karting`.
+void handleG0()
+{
+    static bool handled = false;
+    if (M5Cardputer.BtnA.isPressed()) {
+        if (!handled && M5Cardputer.BtnA.pressedFor(G0_LONG_PRESS_MS)) {
+            alertengine::setEnabled(!alertengine::enabled());
+            handled = true;
+            dirty = true;
+        }
+    } else {
+        handled = false;
     }
 }
 
@@ -198,8 +314,8 @@ void processSightings()
         if (kind == sightingstore::SightingKind::New ||
             kind == sightingstore::SightingKind::MacRotated) {
             alertengine::trigger(res.alertProfile, fp.hash);
-            dirty = true;
         }
+        dirty = true;
     }
 }
 
@@ -211,22 +327,20 @@ void setup()
     M5Cardputer.begin(cfg, true);
     M5Cardputer.Display.setRotation(1);
     canvas.createSprite(SCREEN_W, SCREEN_H);
+    initColors();
 
-    bool sdReady = initSdCard();
-    sightingstore::begin(sdReady);
+    sdOk = initSdCard();
+    sightingstore::begin(sdOk);
     alertengine::begin();
     blescanner::begin();
     blescanner::start();
-
-    statusMsg += sightingstore::sdAvailable()
-                     ? (" ses#" + String(sightingstore::sessionId()))
-                     : "";
 }
 
 void loop()
 {
     M5Cardputer.update();
     handleKeyboard();
+    handleG0();
     processSightings();
     alertengine::update();
     render();

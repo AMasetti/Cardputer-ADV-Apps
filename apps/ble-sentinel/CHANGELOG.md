@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.0]
+- Se reemplazó el radar por una pantalla de seguimiento honesta con lo
+  que el RSSI realmente da: número grande + sparkline de las últimas
+  muestras + texto de tendencia. El radar sugería dirección/posición que
+  nunca tuvimos (ángulo fijo o no); esto es una sola dimensión y se lee
+  como tal.
+- Nuevo: tono de audio continuo opcional en la pantalla de seguimiento
+  (frecuencia sube cuanto más cerca, estilo detector de metales), para
+  buscar sin mirar la pantalla. Toggle con G0 corto (mantenido sigue
+  siendo el mute global, sin cambios ahí).
+- `Screen::Radar` renombrado a `Screen::Follow` / `drawRadar()` a
+  `drawFollow()` en el código, para que el nombre no siga sugiriendo lo
+  que ya no hace.
+
 ## [0.4.0]
 - Nuevo: pantalla de Detalle entre la lista y el radar. Flujo ahora es
   Lista -> (enter) -> Detalle -> (enter) -> Radar, `del` vuelve un paso

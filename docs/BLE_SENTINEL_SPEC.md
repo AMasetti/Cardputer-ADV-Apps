@@ -75,29 +75,44 @@ la lista).
 **Objetivo:** localizar físicamente un dispositivo ya detectado (buscar
 cámara/mic oculto en un cuarto).
 
-**Implementado** como "radar", `src/room_sweep.h/.cpp` + `drawRadar()` en
+**Implementado** en `src/room_sweep.h/.cpp` + `drawFollow()` en
 `main.cpp`. El flujo real quedó en 3 pantallas, no 2: con el scan
 pausado, `;`/`.` mueve la selección en la lista y `enter` abre una
 **pantalla de Detalle** (fabricante, company id, nombre anunciado, RSSI,
 TX power, payload, veces visto, rotaciones de MAC, score de convoy --
-ver sección de `sighting_store` abajo) antes de llegar al radar. Desde
-Detalle, `enter` entra al radar (que retoma el scan si estaba pausado,
-porque necesita RSSI en vivo); `del` siempre vuelve un paso atrás
-(Radar→Detalle, Detalle→Lista).
+ver sección de `sighting_store` abajo) antes de llegar al seguimiento.
+Desde Detalle, `enter` entra a la pantalla de seguimiento (que retoma el
+scan si estaba pausado, porque necesita RSSI en vivo); `del` siempre
+vuelve un paso atrás (Seguimiento→Detalle, Detalle→Lista).
 
-- No es triangulación real -- sigue siendo gradiente de RSSI, como estaba
-  planeado. La UI lo deja explícito con un cartel ("señal relativa, no
-  posición real").
-- El punto en el radar tiene **ángulo fijo por fingerprint** (derivado del
-  hash) y solo la **distancia al centro** varía con la señal -- a
-  propósito: no tenemos información de dirección real, y variar el
-  ángulo además de la distancia sugeriría una posición que no podemos
-  conocer. El barrido giratorio de fondo es cosmético.
+**La primera versión era un radar y se descartó** (quedó en el historial
+de `main.cpp` como referencia de lo que no hacer): un punto en un disco
+con ángulo fijo por fingerprint sigue leyéndose como "ahí está", aunque
+el ángulo no significara nada. RSSI es una sola dimensión (distancia
+aproximada) -- darle forma de mapa 2D es la interfaz engañosa, no la
+honesta, por más cartel de disclaimer que tenga encima. Se reemplazó por:
+
+- **Número grande** (RSSI suavizado) + **sparkline** de las últimas 8
+  muestras crudas (sin promediar, para que se vea el ruido real) + texto
+  de tendencia.
 - `roomsweep::trend()` compara la primera mitad contra la segunda mitad de
-  una ventana corta (8 muestras) para decir "acercándose/alejándose/
-  estable", con una zona muerta de 3dBm para no leer ruido de RF como
-  tendencia real.
-- `del` vuelve a la lista.
+  la ventana corta para decir "acercándose/alejándose/estable", con una
+  zona muerta de 3dBm para no leer ruido de RF como tendencia real.
+- **Tono de audio continuo opcional** (frecuencia sube cuanto más cerca,
+  300-1800Hz mapeado a -95/-40dBm), para buscar sin mirar la pantalla --
+  estilo detector de metales. Toggle con **G0 corto** (soltado antes del
+  mantenido); G0 mantenido sigue siendo el mute global, sin cambios ahí.
+  El flanco de bajada se detecta a mano comparando contra el estado del
+  tick anterior, no con un método `wasReleased()` de la librería que no
+  se usó en ningún otro lado del repo todavía.
+- **Limitación conocida, no resuelta:** el tono continuo y los beeps
+  discretos de `AlertEngine` comparten el mismo canal de speaker. Si un
+  `ConvoySuspect` u otra alerta dispara mientras el tono está sonando,
+  pueden pisarse entre sí por un instante. No es un crash, es un glitch
+  de audio cosmético -- se deja documentado en vez de armar un mezclador
+  de prioridad de canal único para esto todavía.
+- `del` vuelve a Detalle (no a la lista -- se llegó al seguimiento desde
+  ahí).
 
 ## 4. Correlación BLE + WiFi
 

@@ -4,23 +4,26 @@
 // v1 incluye: fingerprint resistente a rotación de MAC, SignatureDB con
 // smart glasses (Meta/Luxottica, Snap), alertas de audio por categoría,
 // log de avistamientos a SD (timestamp relativo al boot, sin RTC todavía),
-// ConvoyAnalyzer (seguimiento sostenido entre "contextos" marcados a
-// mano) y RoomSweep (seguir un dispositivo puntual con un radar de RSSI)
-// + ExportModule (CSV/JSON con hash de integridad a SD).
+// ConvoyAnalyzer (seguimiento sostenido entre "contextos" marcados a mano)
+// y RoomSweep (seguir un dispositivo puntual por RSSI -- número grande +
+// sparkline + tono continuo opcional, NO un radar: un radar implica
+// dirección/posición que no tenemos, ver room_sweep.h) + ExportModule
+// (CSV/JSON con hash de integridad a SD).
 // Pendiente para próximas versiones: WiFiSniffer, soporte de RTC por
 // Grove, más firmas (drones, trackers).
 //
 // Flujo de pantallas: Lista -> (enter, con scan pausado) -> Detalle ->
-// (enter) -> Radar. `del` siempre vuelve un paso atrás (Radar->Detalle,
-// Detalle->Lista).
+// (enter) -> Seguimiento. `del` siempre vuelve un paso atrás
+// (Seguimiento->Detalle, Detalle->Lista).
 //
 // Controles:
-//   G0 (mantenido ~0.8s)  activar/silenciar alertas de audio (arranca en mute)
+//   G0 mantenido ~0.8s    activar/silenciar alertas de audio, global (arranca en mute)
+//   G0 corto (en Seguimiento) activar/desactivar el tono continuo de búsqueda
 //   espacio               pausar/reanudar el scan
 //   ; w  /  . s           (con el scan pausado) mover la selección en la lista
 //   enter                 lista: abrir el detalle del seleccionado
-//                         detalle: seguirlo con el radar
-//   del                   volver un paso atrás (detalle <- radar, lista <- detalle)
+//                         detalle: seguirlo (RSSI en vivo)
+//   del                   volver un paso atrás (seguimiento <- detalle <- lista)
 //   c                     marcar "cambié de lugar" (nuevo contexto, ver ConvoyAnalyzer)
 //   e                     exportar lo visto hasta ahora (CSV + JSON + hash) a SD
 //   +/-                   volumen master
@@ -63,10 +66,10 @@ M5Canvas canvas(&M5Cardputer.Display);
 bool dirty = true;
 bool sdOk = false;
 
-enum class Screen : uint8_t { List, Detail, Radar };
+enum class Screen : uint8_t { List, Detail, Follow };
 Screen screen = Screen::List;
 int cursorIndex = 0; // selección en la lista, solo usable con el scan pausado
-uint64_t selectedFingerprint = 0; // dispositivo elegido, vive en Detail y Radar
+uint64_t selectedFingerprint = 0; // dispositivo elegido, vive en Detail y Follow
 
 String toastMsg;        // feedback corto (ej. "exportado: ...") en el footer
 uint32_t toastUntilMs = 0;
@@ -369,14 +372,13 @@ void drawDetail()
     }
 }
 
-// Pantalla de radar: seguir un dispositivo puntual vía RoomSweep. El
-// ángulo del punto es FIJO por fingerprint (derivado del hash, no cambia
-// nunca) -- lo único que varía con la señal es la distancia al centro.
-// A propósito: no tenemos información de dirección real, y variar el
-// ángulo además de la distancia sugeriría una posición que no podemos
-// conocer. El barrido giratorio es cosmético (relojero visual de "radar
-// en vivo"), no representa nada.
-void drawRadar()
+// Pantalla de seguimiento: número grande + sparkline de RSSI, en vez de
+// un radar. Un radar implica dirección/posición que no tenemos -- esto
+// es honestamente una sola dimensión (más fuerte = más cerca), y un
+// número + gráfico de tendencia la representa sin inventar nada. Tono
+// continuo opcional (toggle con G0 corto) para buscar sin mirar la
+// pantalla, estilo detector de metales.
+void drawFollow()
 {
     const sightingstore::Record *r = sightingstore::byFingerprint(roomsweep::followedHash());
 
@@ -387,51 +389,53 @@ void drawRadar()
     canvas.setTextDatum(middle_right);
     canvas.setTextColor(C_DIM, C_BG);
     canvas.drawString(r ? categoryLabel(r->category) : "?", SCREEN_W - 4, 8);
-
-    const int cx = SCREEN_W / 2;
-    const int cy = 66;
-    const int maxR = 42;
-
-    canvas.drawCircle(cx, cy, maxR, C_HUD);
-    canvas.drawCircle(cx, cy, maxR * 2 / 3, C_HUD);
-    canvas.drawCircle(cx, cy, maxR / 3, C_HUD);
-
-    float sweepAngle = (millis() % 3000) / 3000.0f * 2.0f * static_cast<float>(M_PI);
-    canvas.drawLine(cx, cy, cx + static_cast<int>(cosf(sweepAngle) * maxR),
-                     cy + static_cast<int>(sinf(sweepAngle) * maxR), C_HUD);
+    canvas.drawFastHLine(0, 16, SCREEN_W, C_HUD);
 
     int8_t rssi = roomsweep::smoothedRssi();
-    // -95dBm (débil) -> borde del radar; -40dBm (fuerte) -> centro.
-    int rssiClamped = constrain(static_cast<int>(rssi), -95, -40);
-    int dist = maxR - (rssiClamped + 95) * (maxR - 4) / 55;
-
-    // Ángulo fijo derivado del hash: mismo dispositivo siempre en el mismo
-    // "rayo" del radar, así la vista no salta aunque no sepamos su
-    // dirección real.
-    float fixedAngle = (roomsweep::followedHash() % 360) * (static_cast<float>(M_PI) / 180.0f);
-    int bx = cx + static_cast<int>(cosf(fixedAngle) * dist);
-    int by = cy + static_cast<int>(sinf(fixedAngle) * dist);
-    canvas.fillCircle(bx, by, 4, C_ACCENT);
-
-    canvas.setTextDatum(middle_center);
-    canvas.setTextColor(C_TEXT, C_BG);
-    canvas.drawString(String(rssi) + " dBm", cx, cy + maxR + 12);
-
     const char *trendStr = roomsweep::trend() == roomsweep::Trend::Closer ? "acercandose"
                           : roomsweep::trend() == roomsweep::Trend::Farther ? "alejandose"
                                                                              : "estable";
-    canvas.setTextColor(C_DIM, C_BG);
-    canvas.drawString(trendStr, cx, cy + maxR + 23);
+    uint16_t trendColor = roomsweep::trend() == roomsweep::Trend::Closer ? C_ON
+                         : roomsweep::trend() == roomsweep::Trend::Farther ? C_ACCENT
+                                                                            : C_DIM;
 
-    if (r) {
-        canvas.setTextDatum(bottom_left);
-        canvas.setTextColor(C_DIM, C_BG);
-        canvas.drawString(r->lastMac, 4, SCREEN_H - 14);
+    // Número grande: lo que de verdad importa cuando estás caminando y
+    // mirás de reojo, igual que el tuner con la nota.
+    canvas.setFont(&fonts::DejaVu40);
+    canvas.setTextDatum(middle_center);
+    canvas.setTextColor(C_TEXT, C_BG);
+    canvas.drawString(String(rssi), SCREEN_W / 2, 50);
+
+    canvas.setFont(&fonts::Font0);
+    canvas.setTextColor(C_DIM, C_BG);
+    canvas.drawString("dBm", SCREEN_W / 2, 76);
+
+    canvas.setTextColor(trendColor, C_BG);
+    canvas.drawString(trendStr, SCREEN_W / 2, 88);
+
+    // Sparkline: últimas HISTORY_LEN muestras crudas (sin promediar, para
+    // que se vea el ruido real) en una franja angosta.
+    const int sparkX = 20, sparkY = 98, sparkW = SCREEN_W - 40, sparkH = 20;
+    canvas.drawRect(sparkX, sparkY, sparkW, sparkH, C_HUD);
+    size_t hn = roomsweep::historyCount();
+    if (hn >= 2) {
+        int prevX = 0, prevY = 0;
+        for (size_t i = 0; i < hn; i++) {
+            int rv = constrain(static_cast<int>(roomsweep::historyAt(i)), -95, -40);
+            int px = sparkX + static_cast<int>(i) * (sparkW - 1) / static_cast<int>(hn - 1);
+            int py = sparkY + sparkH - 1 - (rv + 95) * (sparkH - 1) / 55;
+            if (i > 0) canvas.drawLine(prevX, prevY, px, py, C_ACCENT);
+            prevX = px;
+            prevY = py;
+        }
     }
 
-    canvas.setTextDatum(bottom_center);
-    canvas.setTextColor(C_WARN, C_BG);
-    canvas.drawString("senial relativa, no posicion real", cx, SCREEN_H - 14);
+    // Indicador de tono: toggle con G0 corto (no mantenido, eso es el
+    // mute global). Mostramos el estado para que no quede como magia.
+    canvas.setTextDatum(middle_center);
+    canvas.setTextColor(roomsweep::toneMode() ? C_ON : C_DIM, C_BG);
+    canvas.drawString(roomsweep::toneMode() ? "tono: ON (g0 apaga)" : "g0 corto: tono de busqueda",
+                       SCREEN_W / 2, 124);
 }
 
 // En una zona con varios dispositivos, cada paquete de advertising (cada
@@ -439,26 +443,26 @@ void drawRadar()
 // reordena por RSSI en cada uno de esos paquetes y el resultado es un
 // parpadeo/"scroll" constante. Redibujamos como máximo a este ritmo en la
 // lista; el flag `dirty` sigue en pie entre medio, así que no se pierde
-// ningún cambio, solo se agrupan. El radar necesita un ritmo más fino
-// porque el barrido giratorio es una animación continua, no solo una
-// reacción a datos nuevos.
+// ningún cambio, solo se agrupan. El seguimiento necesita un ritmo más
+// fino porque el sparkline se redibuja seguido, no solo cuando llega un
+// avistamiento nuevo.
 constexpr uint32_t LIST_RENDER_INTERVAL_MS = 300;
-constexpr uint32_t RADAR_RENDER_INTERVAL_MS = 60;
+constexpr uint32_t FOLLOW_RENDER_INTERVAL_MS = 60;
 
 void render()
 {
-    if (screen == Screen::Radar) dirty = true; // animación continua, no depende de nuevos avistamientos
+    if (screen == Screen::Follow) dirty = true; // animación continua, no depende de nuevos avistamientos
 
     static uint32_t lastRenderMs = 0;
     uint32_t now = millis();
-    uint32_t interval = screen == Screen::Radar ? RADAR_RENDER_INTERVAL_MS : LIST_RENDER_INTERVAL_MS;
+    uint32_t interval = screen == Screen::Follow ? FOLLOW_RENDER_INTERVAL_MS : LIST_RENDER_INTERVAL_MS;
     if (!dirty || (now - lastRenderMs < interval)) return;
     lastRenderMs = now;
 
     canvas.fillScreen(C_BG);
 
-    if (screen == Screen::Radar) {
-        drawRadar();
+    if (screen == Screen::Follow) {
+        drawFollow();
         drawFooter("del: volver");
         canvas.pushSprite(0, 0);
         dirty = false;
@@ -467,7 +471,7 @@ void render()
 
     if (screen == Screen::Detail) {
         drawDetail();
-        drawFooter("enter: radar   del: volver");
+        drawFooter("enter: seguir   del: volver");
         canvas.pushSprite(0, 0);
         dirty = false;
         return;
@@ -567,8 +571,8 @@ void handleKeyboard()
     } else if (screen == Screen::Detail) {
         if (ks.enter) {
             roomsweep::follow(selectedFingerprint);
-            screen = Screen::Radar;
-            // El radar necesita datos en vivo -- si el usuario pausó para
+            screen = Screen::Follow;
+            // El seguimiento necesita datos en vivo -- si el usuario pausó para
             // seleccionar, lo reanudamos acá.
             if (!blescanner::scanning()) blescanner::start();
             dirty = true;
@@ -577,10 +581,10 @@ void handleKeyboard()
             screen = Screen::List;
             dirty = true;
         }
-    } else if (screen == Screen::Radar) {
+    } else if (screen == Screen::Follow) {
         if (ks.del) {
             roomsweep::stop();
-            screen = Screen::Detail; // se llegó al radar desde Detail, se vuelve ahí
+            screen = Screen::Detail; // se llegó al seguimiento desde Detail, se vuelve ahí
             dirty = true;
         }
     }
@@ -588,22 +592,37 @@ void handleKeyboard()
 
 constexpr uint32_t G0_LONG_PRESS_MS = 800;
 
-// G0 (BtnA) mantenido activa/desactiva el audio. Arranca en mute (ver
-// alert_engine.cpp) -- esto es la única forma de prenderlo, no hay tecla.
-// `handled` evita que se togglee varias veces mientras el botón sigue
-// apretado: un solo toggle por mantenido, igual que el patrón de `karting`.
+// G0 (BtnA) mantenido ~0.8s activa/desactiva el audio global. Arranca en
+// mute (ver alert_engine.cpp) -- esto es la única forma de prenderlo, no
+// hay tecla. G0 corto (soltado antes de llegar al mantenido), en la
+// pantalla de seguimiento, activa/desactiva el tono continuo de búsqueda.
+//
+// No usamos un método wasReleased() de la librería porque en el resto del
+// repo (karting, acá mismo) solo se probó isPressed()/pressedFor(), así
+// que el flanco de bajada lo detectamos a mano comparando contra el
+// estado del tick anterior -- menos elegante, pero no apuesta a una API
+// que no está confirmada en este toolchain.
 void handleG0()
 {
-    static bool handled = false;
-    if (M5Cardputer.BtnA.isPressed()) {
-        if (!handled && M5Cardputer.BtnA.pressedFor(G0_LONG_PRESS_MS)) {
+    static bool longFired = false; // ya disparó la acción de mantenido en este apretón
+    static bool wasDown = false;
+
+    bool down = M5Cardputer.BtnA.isPressed();
+
+    if (down) {
+        if (!longFired && M5Cardputer.BtnA.pressedFor(G0_LONG_PRESS_MS)) {
             alertengine::setEnabled(!alertengine::enabled());
-            handled = true;
+            longFired = true;
             dirty = true;
         }
-    } else {
-        handled = false;
+    } else if (wasDown && !longFired && screen == Screen::Follow) {
+        // Se soltó sin llegar al mantenido -- toque corto.
+        roomsweep::setToneMode(!roomsweep::toneMode());
+        dirty = true;
     }
+
+    if (!down) longFired = false;
+    wasDown = down;
 }
 
 void processSightings()
@@ -653,8 +672,9 @@ void processSightings()
             alertengine::trigger(signaturedb::AlertProfile::ConvoySuspect, fp.hash);
         }
 
-        // Si estamos siguiendo este fingerprint en el radar, cada paquete
-        // (no solo New/Update) alimenta la ventana corta de RoomSweep.
+        // Si estamos siguiendo este fingerprint en la pantalla de
+        // seguimiento, cada paquete (no solo New/Update) alimenta la
+        // ventana corta de RoomSweep.
         roomsweep::sample(fp.hash, raw.rssi);
 
         dirty = true;
@@ -688,5 +708,6 @@ void loop()
     handleG0();
     processSightings();
     alertengine::update();
+    roomsweep::updateTone();
     render();
 }

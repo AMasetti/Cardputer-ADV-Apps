@@ -10,12 +10,17 @@
 // Pendiente para próximas versiones: WiFiSniffer, soporte de RTC por
 // Grove, más firmas (drones, trackers).
 //
+// Flujo de pantallas: Lista -> (enter, con scan pausado) -> Detalle ->
+// (enter) -> Radar. `del` siempre vuelve un paso atrás (Radar->Detalle,
+// Detalle->Lista).
+//
 // Controles:
 //   G0 (mantenido ~0.8s)  activar/silenciar alertas de audio (arranca en mute)
 //   espacio               pausar/reanudar el scan
 //   ; w  /  . s           (con el scan pausado) mover la selección en la lista
-//   enter                 (con un dispositivo seleccionado) seguirlo con el radar
-//   del                   volver de la pantalla de radar a la lista
+//   enter                 lista: abrir el detalle del seleccionado
+//                         detalle: seguirlo con el radar
+//   del                   volver un paso atrás (detalle <- radar, lista <- detalle)
 //   c                     marcar "cambié de lugar" (nuevo contexto, ver ConvoyAnalyzer)
 //   e                     exportar lo visto hasta ahora (CSV + JSON + hash) a SD
 //   +/-                   volumen master
@@ -58,9 +63,10 @@ M5Canvas canvas(&M5Cardputer.Display);
 bool dirty = true;
 bool sdOk = false;
 
-enum class Screen : uint8_t { List, Radar };
+enum class Screen : uint8_t { List, Detail, Radar };
 Screen screen = Screen::List;
 int cursorIndex = 0; // selección en la lista, solo usable con el scan pausado
+uint64_t selectedFingerprint = 0; // dispositivo elegido, vive en Detail y Radar
 
 String toastMsg;        // feedback corto (ej. "exportado: ...") en el footer
 uint32_t toastUntilMs = 0;
@@ -285,6 +291,84 @@ void drawFooter(const char *text)
     canvas.drawString(text, SCREEN_W / 2, SCREEN_H - 2);
 }
 
+// Pantalla de detalle: fabricante/tipo (si hay firma conocida) y todo lo
+// que se puede inferir del advertising crudo -- RSSI, TX power declarado,
+// tamaño del payload, nombre anunciado, rotaciones de MAC, score de
+// convoy. No necesita el scan corriendo: es la última foto que tenemos
+// del dispositivo seleccionado (el Record vive mientras dure la sesión).
+void drawDetail()
+{
+    const sightingstore::Record *r = sightingstore::byFingerprint(selectedFingerprint);
+    if (!r) {
+        canvas.setFont(&fonts::Font0);
+        canvas.setTextDatum(middle_center);
+        canvas.setTextColor(C_DIM, C_BG);
+        canvas.drawString("dispositivo perdido", SCREEN_W / 2, SCREEN_H / 2);
+        return;
+    }
+
+    const signaturedb::Entry *entry = signaturedb::matchByCompanyId(r->lastCompanyId);
+
+    canvas.setFont(&fonts::Font0);
+    canvas.setTextDatum(middle_left);
+    canvas.setTextColor(categoryColor(r->category, r->confidenceLow), C_BG);
+    canvas.drawString(categoryLabel(r->category), 4, 9);
+    canvas.setTextDatum(middle_right);
+    canvas.setTextColor(C_DIM, C_BG);
+    canvas.drawString(r->lastMac, SCREEN_W - 4, 9);
+    canvas.drawFastHLine(0, 17, SCREEN_W, C_HUD);
+
+    int y = 24;
+    constexpr int LINE_H = 11;
+
+    auto row = [&](const char *label, const String &value, uint16_t valueColor) {
+        canvas.setTextDatum(middle_left);
+        canvas.setTextColor(C_DIM, C_BG);
+        canvas.drawString(label, 4, y);
+        canvas.setTextDatum(middle_right);
+        canvas.setTextColor(valueColor, C_BG);
+        canvas.drawString(value, SCREEN_W - 4, y);
+        y += LINE_H;
+    };
+
+    String vendor = entry ? String(entry->vendorLabel)
+                   : (r->category == signaturedb::Category::Headset ? String("heuristica (nombre)")
+                                                                       : String("desconocido"));
+    row("fabricante", vendor, (entry && !entry->verified) ? C_WARN : C_TEXT);
+
+    char companyBuf[8];
+    if (r->lastCompanyId == 0xFFFF) {
+        strcpy(companyBuf, "--");
+    } else {
+        snprintf(companyBuf, sizeof(companyBuf), "0x%04X", r->lastCompanyId);
+    }
+    row("company id", companyBuf, C_TEXT);
+
+    row("nombre anunciado", r->lastLocalName.length() ? r->lastLocalName : String("--"), C_TEXT);
+
+    row("rssi actual", String(r->lastRssi) + " dBm", C_TEXT);
+
+    row("tx power decl.",
+        r->lastTxPowerDbm == INT8_MIN ? String("no declarado") : String(r->lastTxPowerDbm) + " dBm",
+        C_TEXT);
+
+    row("payload / visto", String(r->lastPayloadLen) + "b, x" + String(r->timesSeen), C_TEXT);
+
+    uint32_t spanSec = (r->lastSeenMs - r->firstSeenMs) / 1000;
+    row("ventana / rot. MAC", String(spanSec) + "s, " + String(r->macChanges) + "x",
+        r->macChanges > 0 ? C_WARN : C_DIM);
+
+    uint8_t convoyScore = convoyanalyzer::score(r->fingerprintHash);
+    bool convoySuspect = convoyanalyzer::isSuspect(r->fingerprintHash);
+    row("score seguimiento", String(convoyScore) + "/100", convoySuspect ? C_ACCENT : C_DIM);
+
+    if (r->confidenceLow) {
+        canvas.setTextDatum(middle_center);
+        canvas.setTextColor(C_WARN, C_BG);
+        canvas.drawString("fingerprint de baja confianza (payload pobre)", SCREEN_W / 2, SCREEN_H - 14);
+    }
+}
+
 // Pantalla de radar: seguir un dispositivo puntual vía RoomSweep. El
 // ángulo del punto es FIJO por fingerprint (derivado del hash, no cambia
 // nunca) -- lo único que varía con la señal es la distancia al centro.
@@ -381,6 +465,14 @@ void render()
         return;
     }
 
+    if (screen == Screen::Detail) {
+        drawDetail();
+        drawFooter("enter: radar   del: volver");
+        canvas.pushSprite(0, 0);
+        dirty = false;
+        return;
+    }
+
     drawHud();
     drawStatusBar();
     drawList();
@@ -389,7 +481,7 @@ void render()
     if (toastActive) {
         drawFooter(toastMsg.c_str());
     } else if (!blescanner::scanning() && sightingstore::count() > 0) {
-        drawFooter("; . mover   enter: seguir   e: exportar   space: scan");
+        drawFooter("; . mover   enter: detalle   e: exportar   space: scan");
     } else {
         drawFooter("c: lugar   space: scan   +/- vol   G0: audio");
     }
@@ -464,21 +556,31 @@ void handleKeyboard()
                     if (cursorIndex < static_cast<int>(order.size())) {
                         const sightingstore::Record *r = sightingstore::byIndex(order[cursorIndex]);
                         if (r) {
-                            roomsweep::follow(r->fingerprintHash);
-                            screen = Screen::Radar;
-                            // El radar necesita datos en vivo -- si el usuario
-                            // pausó para seleccionar, lo reanudamos acá.
-                            if (!blescanner::scanning()) blescanner::start();
+                            selectedFingerprint = r->fingerprintHash;
+                            screen = Screen::Detail;
                             dirty = true;
                         }
                     }
                 }
             }
         }
+    } else if (screen == Screen::Detail) {
+        if (ks.enter) {
+            roomsweep::follow(selectedFingerprint);
+            screen = Screen::Radar;
+            // El radar necesita datos en vivo -- si el usuario pausó para
+            // seleccionar, lo reanudamos acá.
+            if (!blescanner::scanning()) blescanner::start();
+            dirty = true;
+        }
+        if (ks.del) {
+            screen = Screen::List;
+            dirty = true;
+        }
     } else if (screen == Screen::Radar) {
         if (ks.del) {
             roomsweep::stop();
-            screen = Screen::List;
+            screen = Screen::Detail; // se llegó al radar desde Detail, se vuelve ahí
             dirty = true;
         }
     }
@@ -524,9 +626,19 @@ void processSightings()
 
         Resolved res = resolve(raw, fp.confidenceLow);
 
+        sightingstore::SightingInput input;
+        input.fingerprintHash = fp.hash;
+        input.mac = raw.mac;
+        input.rssi = raw.rssi;
+        input.category = res.category;
+        input.confidenceLow = res.confidenceLow;
+        input.companyId = raw.companyId;
+        input.txPowerDbm = raw.txPowerDbm;
+        input.payloadLen = raw.payloadLen;
+        input.localName = raw.localName;
+
         sightingstore::Record rec;
-        sightingstore::SightingKind kind = sightingstore::record(
-            fp.hash, raw.mac, raw.rssi, res.category, res.confidenceLow, rec);
+        sightingstore::SightingKind kind = sightingstore::record(input, rec);
 
         if (kind == sightingstore::SightingKind::New ||
             kind == sightingstore::SightingKind::MacRotated) {

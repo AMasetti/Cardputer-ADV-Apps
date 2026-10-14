@@ -28,6 +28,15 @@ struct Record {
     uint8_t macChanges = 0;    // cuántas MAC distintas vimos para este fingerprint
     signaturedb::Category category = signaturedb::Category::Unknown;
     bool confidenceLow = false;
+
+    // Crudo del último advertising packet, para la pantalla de detalle --
+    // resolve() en main.cpp ya consume esto para categorizar, pero antes
+    // se perdía: sin guardarlo acá no había forma de mostrar "fabricante"
+    // o "nombre anunciado" después del hecho.
+    uint16_t lastCompanyId = 0xFFFF; // 0xFFFF = sin manufacturer data
+    int8_t lastTxPowerDbm = INT8_MIN; // INT8_MIN = no declarado
+    uint8_t lastPayloadLen = 0;
+    String lastLocalName; // vacío si el dispositivo no lo anunció
 };
 
 // Resultado de registrar un avistamiento, para que el caller sepa si vale
@@ -47,12 +56,24 @@ void begin(bool sdReady);
 uint32_t sessionId();
 bool sdAvailable();
 
-// Registra/actualiza un avistamiento. category/confidenceLow vienen ya
-// resueltos por el caller (fingerprint + signature_db). Devuelve el tipo de
-// evento y, por out-param, el Record actualizado.
-SightingKind record(uint64_t fingerprintHash, const String &mac, int8_t rssi,
-                     signaturedb::Category category, bool confidenceLow,
-                     Record &out);
+// Entrada para record(): identidad resuelta (fingerprint/categoría, ya
+// decidida por el caller) + los campos crudos del advertising packet que
+// vale la pena guardar para la pantalla de detalle.
+struct SightingInput {
+    uint64_t fingerprintHash;
+    String mac;
+    int8_t rssi;
+    signaturedb::Category category;
+    bool confidenceLow;
+    uint16_t companyId;
+    int8_t txPowerDbm;
+    uint8_t payloadLen;
+    String localName;
+};
+
+// Registra/actualiza un avistamiento. Devuelve el tipo de evento y, por
+// out-param, el Record actualizado.
+SightingKind record(const SightingInput &in, Record &out);
 
 size_t count();
 const Record *byIndex(size_t i); // para listar en UI, ordenado por lastSeenMs desc

@@ -76,9 +76,14 @@ la lista).
 cámara/mic oculto en un cuarto).
 
 **Implementado** como "radar", `src/room_sweep.h/.cpp` + `drawRadar()` en
-`main.cpp`: con el scan pausado, `;`/`.` mueve la selección en la lista y
-`enter` sobre un dispositivo entra a la pantalla de radar (que retoma el
-scan si estaba pausado, porque necesita RSSI en vivo).
+`main.cpp`. El flujo real quedó en 3 pantallas, no 2: con el scan
+pausado, `;`/`.` mueve la selección en la lista y `enter` abre una
+**pantalla de Detalle** (fabricante, company id, nombre anunciado, RSSI,
+TX power, payload, veces visto, rotaciones de MAC, score de convoy --
+ver sección de `sighting_store` abajo) antes de llegar al radar. Desde
+Detalle, `enter` entra al radar (que retoma el scan si estaba pausado,
+porque necesita RSSI en vivo); `del` siempre vuelve un paso atrás
+(Radar→Detalle, Detalle→Lista).
 
 - No es triangulación real -- sigue siendo gradiente de RSSI, como estaba
   planeado. La UI lo deja explícito con un cartel ("señal relativa, no

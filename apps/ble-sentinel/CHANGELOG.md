@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0]
+- Nuevo: pantalla de Detalle entre la lista y el radar. Flujo ahora es
+  Lista -> (enter) -> Detalle -> (enter) -> Radar, `del` vuelve un paso
+  atrás en cada una.
+- Detalle muestra fabricante (si hay firma conocida; heurística o
+  "desconocido" si no), company id, nombre anunciado, RSSI actual, TX
+  power declarado, tamaño de payload, veces visto, rotaciones de MAC,
+  ventana temporal y score de ConvoyAnalyzer.
+- `sighting_store::Record` ahora guarda el company id / TX power /
+  payload length / nombre local del último advertising -- antes se
+  resolvían y se perdían, no quedaban disponibles para mostrar después.
+
 ## [0.3.0]
 - Nuevo: selección en la lista con el scan pausado (`;`/`.` mover,
   `enter` elegir) y pantalla de radar (`RoomSweep`) para seguir un

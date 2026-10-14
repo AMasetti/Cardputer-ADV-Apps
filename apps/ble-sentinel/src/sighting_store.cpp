@@ -102,31 +102,33 @@ void begin(bool sdReady)
 uint32_t sessionId() { return g_sessionId; }
 bool sdAvailable() { return g_sdAvailable; }
 
-SightingKind record(uint64_t fingerprintHash, const String &mac, int8_t rssi,
-                     signaturedb::Category category, bool confidenceLow,
-                     Record &out)
+SightingKind record(const SightingInput &in, Record &out)
 {
     uint32_t now = millis();
-    Record *existing = find(fingerprintHash);
+    Record *existing = find(in.fingerprintHash);
 
     if (!existing) {
         Record r;
-        r.fingerprintHash = fingerprintHash;
-        r.lastMac = mac;
-        r.lastRssi = rssi;
+        r.fingerprintHash = in.fingerprintHash;
+        r.lastMac = in.mac;
+        r.lastRssi = in.rssi;
         r.firstSeenMs = now;
         r.lastSeenMs = now;
         r.timesSeen = 1;
         r.macChanges = 0;
-        r.category = category;
-        r.confidenceLow = confidenceLow;
+        r.category = in.category;
+        r.confidenceLow = in.confidenceLow;
+        r.lastCompanyId = in.companyId;
+        r.lastTxPowerDbm = in.txPowerDbm;
+        r.lastPayloadLen = in.payloadLen;
+        r.lastLocalName = in.localName;
         records.push_back(r);
         out = r;
         appendLogLine(out, SightingKind::New);
         return SightingKind::New;
     }
 
-    bool macChanged = (existing->lastMac != mac);
+    bool macChanged = (existing->lastMac != in.mac);
     SightingKind kind = SightingKind::Update;
     if (macChanged) {
         uint32_t delta = now - existing->lastSeenMs;
@@ -138,10 +140,17 @@ SightingKind record(uint64_t fingerprintHash, const String &mac, int8_t rssi,
         existing->macChanges++;
     }
 
-    existing->lastMac = mac;
-    existing->lastRssi = rssi;
+    existing->lastMac = in.mac;
+    existing->lastRssi = in.rssi;
     existing->lastSeenMs = now;
     existing->timesSeen++;
+    // El nombre local a veces llega recién en el scan response, no en el
+    // primer paquete -- si este avistamiento lo trae, lo actualizamos;
+    // si no, dejamos el que ya teníamos en vez de borrarlo con uno vacío.
+    if (in.localName.length()) existing->lastLocalName = in.localName;
+    existing->lastCompanyId = in.companyId;
+    existing->lastTxPowerDbm = in.txPowerDbm;
+    existing->lastPayloadLen = in.payloadLen;
     out = *existing;
 
     // No logueamos cada Update (saturaría la SD con el ritmo de advertising

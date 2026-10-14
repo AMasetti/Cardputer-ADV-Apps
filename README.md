@@ -54,6 +54,7 @@ scripts/
   new-app.sh           # creates an app from _template
 docs/
   hardware.md          # RA-02, SD and I2C sensor wiring
+  BLE_SENTINEL_SPEC.md # ble-sentinel design doc
 .githooks/             # commit-msg and pre-push hooks
 .github/workflows/build.yml
 ```
@@ -75,6 +76,7 @@ docs/
 | 🏁 | `karting` | Tool | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/karting-v0.1.0) | Kart telemetry without GPS, with the Cardputer in your pocket: it estimates the path from the IMU, detects the laps by itself by recognizing the circuit repeating, and logs the session to the microSD. Experimental. [See usage below](#karting-usage) |
 | 🪪 | `ekoparty-badge` | Badge | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/ekoparty-badge-v0.1.0) | Unofficial attendee badge for the Ekoparty 22 security conference: shows the event logo and a QR code to AMasetti.com, so other attendees can scan it to reach my site. Any key toggles a full-screen QR. [See the note below](#ekoparty-badge) |
 | 📡 | `meshtastic-ra02` | Firmware | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/meshtastic-ra02-v0.1.0) | Meshtastic with an RA-02 (SX1278, 433 MHz) on the EXT 14P header instead of the LoRa-1262 Cap. Wiring in [docs/hardware.md](docs/hardware.md) |
+| 🛡️ | `ble-sentinel` | Security | [![v0.1.0](https://img.shields.io/badge/v0.1.0-blue)](https://github.com/AMasetti/Cardputer-ADV-Apps/releases/tag/ble-sentinel-v0.1.0) | Passive BLE scanner for personal counter-surveillance: flags nearby smart glasses (Meta/Luxottica, Snap) and other devices by manufacturer-data signature, with a MAC-rotation-resistant fingerprint and per-category audio alerts. Scan-only, never advertises — see [docs/BLE_SENTINEL_SPEC.md](docs/BLE_SENTINEL_SPEC.md) |
 
 Licenses differ per app, see [License](#license).
 
@@ -340,7 +342,7 @@ My own work is **free for personal and other noncommercial use, but can't be sol
 
 | Part | License | Why |
 |---|---|---|
-| `snake`, `tetrix`, `tuner`, `compass`, `shell-rc`, `led-rc`, `wiz-rc`, `karting`, `ekoparty-badge`, `scripts/`, CI, docs | [PolyForm Noncommercial 1.0.0](LICENSE) | My own code |
+| `snake`, `tetrix`, `tuner`, `compass`, `shell-rc`, `led-rc`, `wiz-rc`, `karting`, `ekoparty-badge`, `ble-sentinel`, `scripts/`, CI, docs | [PolyForm Noncommercial 1.0.0](LICENSE) | My own code |
 | `doom` | [GPL-2.0-or-later](apps/doom/LICENSE) | Based on id Software's Doom, PrBoom, GBADoom and romalik's port |
 | `mp3-player` | [GPL-3.0](apps/mp3-player/LICENSE) | Links [ESP8266Audio](https://github.com/earlephilhower/ESP8266Audio), which is GPL-3.0 |
 | `meshtastic-ra02` | [GPL-3.0](apps/meshtastic-ra02/LICENSE) | Built from the [Meshtastic firmware](https://github.com/meshtastic/firmware), which is GPL-3.0 |

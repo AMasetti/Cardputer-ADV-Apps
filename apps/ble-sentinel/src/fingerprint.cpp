@@ -39,6 +39,7 @@ Result compute(const AdvInput &in)
     uint64_t h = FNV_OFFSET;
 
     mixU16(h, in.companyId);
+    mix(h, in.mfgTypeByte);
     mix(h, in.payloadLen);
     mix(h, static_cast<uint8_t>(txPowerBucket(in.txPowerDbm)));
     mix(h, in.adTypesPresentMask);

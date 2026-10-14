@@ -20,6 +20,7 @@ const char *categoryName(signaturedb::Category c)
         case signaturedb::Category::SmartGlasses: return "smart_glasses";
         case signaturedb::Category::DroneRemoteId: return "drone_remote_id";
         case signaturedb::Category::Headset: return "headset";
+        case signaturedb::Category::FindMyTracker: return "findmy_tracker";
         default: return "unknown";
     }
 }
@@ -91,16 +92,17 @@ void writeCsv(const char *path)
 {
     File f = SD.open(path, FILE_WRITE);
     if (!f) return;
-    f.println("fingerprint_hash,last_mac,category,confidence_low,rssi,times_seen,"
+    f.println("fingerprint_hash,last_mac,category,confidence_low,trusted,rssi,times_seen,"
                "mac_changes,convoy_score,first_seen_rel_ms,last_seen_rel_ms");
     size_t n = sightingstore::count();
     for (size_t i = 0; i < n; i++) {
         const sightingstore::Record *r = sightingstore::byIndex(i);
         if (!r) continue;
-        f.printf("%016llx,%s,%s,%s,%d,%u,%u,%u,%lu,%lu\n",
+        f.printf("%016llx,%s,%s,%s,%s,%d,%u,%u,%u,%lu,%lu\n",
                   static_cast<unsigned long long>(r->fingerprintHash),
                   r->lastMac.c_str(), categoryName(r->category),
-                  r->confidenceLow ? "true" : "false", r->lastRssi,
+                  r->confidenceLow ? "true" : "false",
+                  r->trusted ? "true" : "false", r->lastRssi,
                   r->timesSeen, r->macChanges,
                   convoyanalyzer::score(r->fingerprintHash),
                   static_cast<unsigned long>(r->firstSeenMs),
@@ -123,11 +125,12 @@ void writeJson(const char *path, uint32_t sessionId)
         const sightingstore::Record *r = sightingstore::byIndex(i);
         if (!r) continue;
         f.printf("  {\"fingerprint_hash\":\"%016llx\",\"last_mac\":\"%s\",\"category\":\"%s\","
-                  "\"confidence_low\":%s,\"rssi\":%d,\"times_seen\":%u,\"mac_changes\":%u,"
+                  "\"confidence_low\":%s,\"trusted\":%s,\"rssi\":%d,\"times_seen\":%u,\"mac_changes\":%u,"
                   "\"convoy_score\":%u,\"first_seen_rel_ms\":%lu,\"last_seen_rel_ms\":%lu}%s\n",
                   static_cast<unsigned long long>(r->fingerprintHash),
                   r->lastMac.c_str(), categoryName(r->category),
-                  r->confidenceLow ? "true" : "false", r->lastRssi,
+                  r->confidenceLow ? "true" : "false",
+                  r->trusted ? "true" : "false", r->lastRssi,
                   r->timesSeen, r->macChanges,
                   convoyanalyzer::score(r->fingerprintHash),
                   static_cast<unsigned long>(r->firstSeenMs),

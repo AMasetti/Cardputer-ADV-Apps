@@ -20,6 +20,13 @@ struct RawSighting {
     String mac;
     int8_t rssi = 0;
     uint16_t companyId = 0xFFFF; // 0xFFFF = sin manufacturer data
+    // Byte inmediatamente después del company ID en el manufacturer data.
+    // Varios fabricantes (Apple es el caso que nos importa: un mismo
+    // company ID 0x004C cubre iPhones, AirPods, Watch, Find My...) lo usan
+    // como "sub-protocolo" -- sin esto no se puede distinguir un AirTag/
+    // accesorio Find My (type 0x12) de cualquier otro dispositivo Apple.
+    // 0 si no hay manufacturer data o tiene menos de 3 bytes.
+    uint8_t mfgTypeByte = 0;
     uint8_t payloadLen = 0;
     int8_t txPowerDbm = INT8_MIN;
     std::vector<uint16_t> serviceUuids16; // ordenados

@@ -21,6 +21,11 @@ namespace fingerprint {
 // txPowerDbm = INT8_MIN si el campo no vino en el paquete.
 struct AdvInput {
     uint16_t companyId = 0xFFFF;
+    // Byte de sub-protocolo dentro del manufacturer data (ver ble_scanner.h):
+    // sin esto, todos los dispositivos Apple (company ID 0x004C) comparten
+    // fingerprint salvo que varíen en otro campo -- un AirTag y un AirPods
+    // podrían colisionar.
+    uint8_t mfgTypeByte = 0;
     uint8_t payloadLen = 0;
     int8_t txPowerDbm = INT8_MIN;
     std::vector<uint16_t> serviceUuids16; // ya ordenados por el caller

@@ -30,6 +30,9 @@ const char *const HEADSET_NAME_HINTS[] = {
 };
 constexpr size_t HEADSET_HINTS_LEN = sizeof(HEADSET_NAME_HINTS) / sizeof(HEADSET_NAME_HINTS[0]);
 
+constexpr uint16_t APPLE_COMPANY_ID = 0x004C;
+constexpr uint8_t FINDMY_TYPE_BYTE = 0x12;
+
 } // namespace
 
 const Entry *matchByCompanyId(uint16_t companyId)
@@ -49,6 +52,11 @@ bool matchHeadsetByName(const String &localName)
         if (lower.indexOf(HEADSET_NAME_HINTS[i]) >= 0) return true;
     }
     return false;
+}
+
+bool matchFindMyNetwork(uint16_t companyId, uint8_t mfgTypeByte)
+{
+    return companyId == APPLE_COMPANY_ID && mfgTypeByte == FINDMY_TYPE_BYTE;
 }
 
 } // namespace signaturedb

@@ -18,10 +18,13 @@
 namespace signaturedb {
 
 enum class Category : uint8_t {
-    Unknown,       // sin match -> tratado como sospechoso por defecto
-    SmartGlasses,  // Meta Ray-Ban/Oakley, Snap Spectacles, etc.
-    DroneRemoteId, // ASTM F3411 Remote ID (matcheado por service UUID, no company ID)
-    Headset,       // heurística por nombre, ver matchByName()
+    Unknown,        // sin match -> tratado como sospechoso por defecto
+    SmartGlasses,   // Meta Ray-Ban/Oakley, Snap Spectacles, etc.
+    DroneRemoteId,  // ASTM F3411 Remote ID (matcheado por service UUID, no company ID)
+    Headset,        // heurística por nombre, ver matchByName()
+    FindMyTracker,  // accesorio Find My de Apple (ver matchFindMyNetwork()) -- AirTag es
+                    // el caso más común, pero el mismo type byte lo usan otros
+                    // accesorios Find My, así que no afirmamos "es un AirTag" puntual.
 };
 
 // Nombres de perfil de alerta que consume alert_engine. Separado de
@@ -55,5 +58,19 @@ const Entry *matchByCompanyId(uint16_t companyId);
 // de alerta real para probar el AlertEngine mientras no tenemos una tabla
 // de company IDs de auriculares verificada.
 bool matchHeadsetByName(const String &localName);
+
+// Find My de Apple (AirTag y otros accesorios): company ID 0x004C (Apple)
+// + type byte 0x12 dentro del manufacturer data. Company ID solo no
+// alcanza -- TODOS los dispositivos Apple (iPhone, AirPods, Watch) usan
+// 0x004C para distintas cosas, el type byte es el que distingue el
+// protocolo Find My específicamente. Fuente: reverse engineering público
+// (Adam Catley, paper arXiv 2401.13584 sobre seguridad de AirTag/SmartTag),
+// no documentación oficial de Apple -- ver docs/BLE_SENTINEL_SPEC.md.
+//
+// No distingue "cerca de su dueño" vs "separado/perdido" (ese bit del
+// status byte varía entre fuentes consultadas y no se confirmó contra una
+// captura propia) -- v1 solo dice "hay un accesorio Find My anunciando
+// cerca", que alcanza para el caso de uso de detectar trackers ajenos.
+bool matchFindMyNetwork(uint16_t companyId, uint8_t mfgTypeByte);
 
 } // namespace signaturedb

@@ -47,6 +47,9 @@ class ScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                 s.companyId = static_cast<uint8_t>(mfg[0]) |
                                (static_cast<uint8_t>(mfg[1]) << 8);
             }
+            if (mfg.size() >= 3) {
+                s.mfgTypeByte = static_cast<uint8_t>(mfg[2]);
+            }
         }
 
         s.txPowerDbm = d->haveTXPower() ? d->getTXPower() : INT8_MIN;

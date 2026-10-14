@@ -135,6 +135,22 @@ actual deshabilita a propósito los roles NimBLE que no sean observer
 "ruidoso" por error; sumar WiFi promiscuo es un subsistema de radio
 distinto y merece su propio build/validación antes de mezclarlo con eso.
 
+**Limitación relacionada, real y sin solución fácil:** varios auriculares
+(ej. Beats, que usan los mismos chips W1/H1 que AirPods) transmiten el
+audio por **Bluetooth Classic (A2DP)**, no BLE. Mientras están conectados
+a un teléfono reproduciendo audio, típicamente no tienen razón para seguir
+anunciando por BLE -- ya están conectados, no necesitan ser descubiertos.
+`BLEScanner` es un observer de BLE únicamente (NimBLE); Bluetooth Classic
+es una pila de radio distinta (Bluedroid en el ESP32, no NimBLE) y correr
+ambas a la vez tiene la misma clase de problema de coexistencia que el
+WiFiSniffer de arriba, pero peor: históricamente en el ESP32 no se pueden
+inicializar NimBLE y Bluedroid Classic al mismo tiempo sin reconfiguración
+de bajo nivel. Por eso un dispositivo así **puede no aparecer nunca** en
+la lista mientras está conectado por Classic -- no es un bug de matching,
+es que la app directamente no escucha esa capa. Queda fuera de alcance por
+ahora, mismo criterio que WiFiSniffer: no se resuelve a ciegas sin
+hardware para validar la coexistencia de radios.
+
 ## 5. "Primera vez visto vs. recurrente"
 
 **v1 implementado, con una limitación explícita:** sin RTC (ver sección 8),
@@ -258,9 +274,63 @@ y `0x03C2` quedan `verified = false` porque hay discrepancia entre fuentes
 o no se confirmaron de forma independiente. Cualquier entrada no verificada
 sube `confidenceLow` en el `Record` resultante, visible en la UI con un `?`.
 
+**Find My de Apple (AirTag y otros accesorios) — implementado en v0.7.0.**
+Company ID 0x004C (Apple) **no alcanza solo**: todo dispositivo Apple
+(iPhone, AirPods, Watch, continuity) lo usa para cosas distintas. El campo
+que distingue el protocolo es el byte inmediatamente después del company
+ID dentro del manufacturer data ("type byte" en la terminología de Apple
+para sus distintos sub-protocolos sobre 0x004C) — `0x12` identifica Find
+My específicamente. Esto obligó a capturar ese byte en `ble_scanner.h`
+(`mfgTypeByte`, antes no se guardaba) y sumarlo al fingerprint
+(`fingerprint::AdvInput::mfgTypeByte`) para que un AirTag y un AirPods no
+colisionen en el mismo fingerprint por compartir company ID.
+
+- **Fuente:** reverse engineering público (Adam Catley, y el paper
+  arXiv 2401.13584 sobre seguridad de AirTag/SmartTag), no documentación
+  oficial de Apple. Coinciden en el layout general; hay discrepancia
+  entre fuentes sobre el offset/significado exacto del status byte que
+  distingue "cerca de su dueño" de "separado/perdido" -- v1 no intenta
+  decodificar eso, solo reporta "hay un accesorio Find My anunciando
+  cerca" (`Category::FindMyTracker`), que alcanza para el caso de uso de
+  detectar trackers ajenos.
+- **No afirma "es un AirTag"** puntualmente: otros accesorios Find My
+  (de terceros, certificados MFi) comparten el mismo type byte. Es
+  honesto llamarlo "accesorio Find My", no "AirTag" sin más.
+- Matcheo vive en `signature_db::matchFindMyNetwork(companyId, mfgTypeByte)`,
+  separado de la tabla `TABLE[]` por company ID porque necesita un segundo
+  campo -- no es una `Entry` más.
+
 **Pendiente:** Remote ID de drones (ASTM F3411, matcheo por service UUID,
 no por company ID — el UUID exacto no se confirmó en la investigación
 previa, hay que validarlo contra `opendroneid-core-c` antes de implementar
-el matcher). Firmas de Unitree, GoPro, dashcams, trackers (AirTag/Tile/
-SmartTag) — todas pendientes de captura real o de portar desde un proyecto
-open-source equivalente, mismo criterio que con NoPeek.
+el matcher). Firmas de Unitree, GoPro, dashcams, Tile/SmartTag (formato
+propio de Samsung/Tile, no Find My) — todas pendientes de captura real o
+de portar desde un proyecto open-source equivalente, mismo criterio que
+con NoPeek.
+
+## Dispositivos "propios" (trusted)
+
+**Implementado en v0.7.0.** Tecla `t` en la pantalla de Detalle marca o
+desmarca el dispositivo seleccionado como propio. Persiste a
+`/sentinel/trusted.txt` (lista de fingerprint hashes en hex, uno por
+línea, reescrita completa en cada cambio) si hay SD -- sobrevive un
+reinicio, a diferencia del resto del estado de la sesión, porque es
+justo lo que no se quiere tener que re-marcar cada vez.
+
+**Por qué existe:** `ConvoyAnalyzer` (sección 2) detecta "visto en 3+
+lugares distintos" como señal de seguimiento -- pero un AirTag/tracker
+que el usuario lleva siempre en su propia mochila cumple esa condición
+por definición, en cada sesión, para siempre. Sin una forma de decir
+"este es mío", la app alertaría constantemente sobre el propio
+dispositivo del usuario, que es ruido, no señal. El caso de uso real
+(avisar sobre un tracker *ajeno* que empieza a mostrar el mismo patrón)
+solo funciona si el usuario puede excluir el suyo.
+
+Un dispositivo `trusted`:
+- No dispara `alertengine::trigger()` (ni el perfil de categoría ni
+  `ConvoySuspect`), aunque `convoyanalyzer::score()` siga calculándose
+  normalmente (se puede ver en Detalle, solo no alerta).
+- Se ordena al final de la lista (`sortedOrder()`), por debajo incluso
+  de lo no identificado -- ya se sabe qué es, no urge mirarlo.
+- Se muestra en verde con la etiqueta "mio" en vez de la categoría o de
+  "!SIGUE", tanto en la lista como en Detalle (`[MIO]` junto al label).

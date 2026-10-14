@@ -1,5 +1,6 @@
 #include "sighting_store.h"
 #include <SD.h>
+#include <cstdlib>
 #include "fingerprint.h"
 
 namespace sightingstore {
@@ -9,8 +10,10 @@ namespace {
 constexpr const char *DATA_DIR = "/sentinel";
 constexpr const char *HISTORY_DIR = "/sentinel/history";
 constexpr const char *SESSION_FILE = "/sentinel/session.txt";
+constexpr const char *TRUSTED_FILE = "/sentinel/trusted.txt";
 
 std::vector<Record> records;
+std::vector<uint64_t> trustedHashes; // cargado de TRUSTED_FILE en begin()
 uint32_t g_sessionId = 0;
 bool g_sdAvailable = false;
 File historyLog;
@@ -21,8 +24,50 @@ const char *categoryLabel(signaturedb::Category c)
         case signaturedb::Category::SmartGlasses: return "glasses";
         case signaturedb::Category::DroneRemoteId: return "drone";
         case signaturedb::Category::Headset: return "headset";
+        case signaturedb::Category::FindMyTracker: return "findmy";
         default: return "unknown";
     }
+}
+
+bool hashInTrustedList(uint64_t hash)
+{
+    for (uint64_t h : trustedHashes) {
+        if (h == hash) return true;
+    }
+    return false;
+}
+
+// Reescribe el archivo entero desde trustedHashes en vez de confiar en el
+// modo de apertura para truncar/agregar -- es una lista chica (unos pocos
+// dispositivos propios como mucho), reescribirla completa es barato y sin
+// ambigüedad.
+void saveTrustedFile()
+{
+    if (!g_sdAvailable) return;
+    SD.remove(TRUSTED_FILE);
+    if (trustedHashes.empty()) return;
+    File f = SD.open(TRUSTED_FILE, FILE_WRITE);
+    if (!f) return;
+    for (uint64_t h : trustedHashes) {
+        f.printf("%016llx\n", static_cast<unsigned long long>(h));
+    }
+    f.close();
+}
+
+void loadTrustedFile()
+{
+    trustedHashes.clear();
+    if (!g_sdAvailable || !SD.exists(TRUSTED_FILE)) return;
+    File f = SD.open(TRUSTED_FILE);
+    if (!f) return;
+    while (f.available()) {
+        String line = f.readStringUntil('\n');
+        line.trim();
+        if (line.length() == 0) continue;
+        uint64_t h = strtoull(line.c_str(), nullptr, 16);
+        if (h != 0) trustedHashes.push_back(h);
+    }
+    f.close();
 }
 
 // session.txt guarda un único entero: el próximo session_id a usar. Si no
@@ -95,6 +140,7 @@ void begin(bool sdReady)
     } else {
         g_sessionId = 1; // degradado: solo RAM, sin continuidad entre boots
     }
+    loadTrustedFile(); // sí sobrevive entre sesiones, a diferencia de `records`
     records.clear();
     records.reserve(32);
 }
@@ -119,9 +165,11 @@ SightingKind record(const SightingInput &in, Record &out)
         r.category = in.category;
         r.confidenceLow = in.confidenceLow;
         r.lastCompanyId = in.companyId;
+        r.lastMfgTypeByte = in.mfgTypeByte;
         r.lastTxPowerDbm = in.txPowerDbm;
         r.lastPayloadLen = in.payloadLen;
         r.lastLocalName = in.localName;
+        r.trusted = hashInTrustedList(in.fingerprintHash);
         records.push_back(r);
         out = r;
         appendLogLine(out, SightingKind::New);
@@ -149,6 +197,7 @@ SightingKind record(const SightingInput &in, Record &out)
     // si no, dejamos el que ya teníamos en vez de borrarlo con uno vacío.
     if (in.localName.length()) existing->lastLocalName = in.localName;
     existing->lastCompanyId = in.companyId;
+    existing->lastMfgTypeByte = in.mfgTypeByte;
     existing->lastTxPowerDbm = in.txPowerDbm;
     existing->lastPayloadLen = in.payloadLen;
     // category/confidenceLow SÍ se reemplazan siempre, no solo al crear:
@@ -180,6 +229,34 @@ const Record *byIndex(size_t i)
 const Record *byFingerprint(uint64_t fingerprintHash)
 {
     return find(fingerprintHash);
+}
+
+void setTrusted(uint64_t fingerprintHash, bool trusted)
+{
+    bool already = hashInTrustedList(fingerprintHash);
+    if (trusted && !already) {
+        trustedHashes.push_back(fingerprintHash);
+    } else if (!trusted && already) {
+        for (size_t i = 0; i < trustedHashes.size(); i++) {
+            if (trustedHashes[i] == fingerprintHash) {
+                trustedHashes.erase(trustedHashes.begin() + i);
+                break;
+            }
+        }
+    }
+    saveTrustedFile();
+
+    // Si el dispositivo ya está en esta sesión, reflejarlo ahora mismo --
+    // si no, el usuario vería el toggle sin efecto hasta el próximo
+    // avistamiento.
+    if (Record *existing = find(fingerprintHash)) {
+        existing->trusted = trusted;
+    }
+}
+
+bool isTrusted(uint64_t fingerprintHash)
+{
+    return hashInTrustedList(fingerprintHash);
 }
 
 } // namespace sightingstore

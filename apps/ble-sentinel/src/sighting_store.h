@@ -34,9 +34,16 @@ struct Record {
     // se perdía: sin guardarlo acá no había forma de mostrar "fabricante"
     // o "nombre anunciado" después del hecho.
     uint16_t lastCompanyId = 0xFFFF; // 0xFFFF = sin manufacturer data
+    uint8_t lastMfgTypeByte = 0;      // ver ble_scanner.h / signature_db.h matchFindMyNetwork()
     int8_t lastTxPowerDbm = INT8_MIN; // INT8_MIN = no declarado
     uint8_t lastPayloadLen = 0;
     String lastLocalName; // vacío si el dispositivo no lo anunció
+
+    // Marcado a mano por el usuario ("este es mío, no me alertes si
+    // parece seguirme" -- caso típico: tu propio AirTag, que por
+    // definición está siempre con vos y por eso dispara ConvoyAnalyzer
+    // igual que lo haría un tracker ajeno). Persiste a SD, ver setTrusted().
+    bool trusted = false;
 };
 
 // Resultado de registrar un avistamiento, para que el caller sepa si vale
@@ -66,6 +73,7 @@ struct SightingInput {
     signaturedb::Category category;
     bool confidenceLow;
     uint16_t companyId;
+    uint8_t mfgTypeByte;
     int8_t txPowerDbm;
     uint8_t payloadLen;
     String localName;
@@ -78,5 +86,12 @@ SightingKind record(const SightingInput &in, Record &out);
 size_t count();
 const Record *byIndex(size_t i); // para listar en UI, ordenado por lastSeenMs desc
 const Record *byFingerprint(uint64_t fingerprintHash); // para seguir un dispositivo puntual (radar)
+
+// Marca/desmarca un dispositivo como propio -- ver comentario de
+// `Record::trusted`. Persiste a SD en /sentinel/trusted.txt (si hay
+// tarjeta) para sobrevivir un reinicio; sin SD queda solo en RAM para
+// esta sesión, igual que el resto del estado degradado.
+void setTrusted(uint64_t fingerprintHash, bool trusted);
+bool isTrusted(uint64_t fingerprintHash);
 
 } // namespace sightingstore

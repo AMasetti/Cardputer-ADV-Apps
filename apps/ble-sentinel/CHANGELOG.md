@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.7.0]
+- Nuevo: detección de accesorios Find My de Apple (AirTag y similares).
+  Company ID de Apple (0x004C) solo no alcanza -- todo dispositivo Apple
+  lo usa -- así que se capturó el byte de sub-protocolo del manufacturer
+  data (`mfgTypeByte`) y se matchea `0x12` (Find My) específicamente.
+  Categoría `FindMyTracker` nueva.
+- Nuevo: dispositivos marcados como "mío" (tecla `t` en Detalle), con
+  persistencia a SD (`/sentinel/trusted.txt`, sobrevive un reinicio). Un
+  dispositivo propio no dispara alertas ni cuenta como sospechoso de
+  convoy -- necesario porque tu propio AirTag está siempre con vos y por
+  definición parecería "seguirte" igual que lo haría uno ajeno; la app
+  solo es útil contra rastreo de terceros si le decís cuál es el tuyo.
+  Se ordenan al final de la lista (ya los conocés, no urgen).
+- Fingerprint ahora incluye `mfgTypeByte` para no colisionar distintos
+  sub-protocolos de un mismo fabricante (ej. AirTag vs. AirPods, ambos
+  Apple/0x004C).
+
 ## [0.6.1]
 - Fix real: `category`/`confidenceLow` de un `Record` solo se calculaban
   en el primer paquete y nunca se actualizaban después. Muchos

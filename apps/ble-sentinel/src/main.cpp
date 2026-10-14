@@ -86,6 +86,7 @@ const char *categoryLabel(signaturedb::Category c)
         case signaturedb::Category::SmartGlasses: return "GLASSES";
         case signaturedb::Category::DroneRemoteId: return "DRONE";
         case signaturedb::Category::Headset: return "headset";
+        case signaturedb::Category::FindMyTracker: return "FINDMY";
         default: return "unknown";
     }
 }
@@ -95,6 +96,7 @@ uint16_t categoryColor(signaturedb::Category c, bool confidenceLow)
     switch (c) {
         case signaturedb::Category::SmartGlasses:
         case signaturedb::Category::DroneRemoteId:
+        case signaturedb::Category::FindMyTracker:
             return confidenceLow ? C_WARN : C_ACCENT;
         case signaturedb::Category::Headset:
             return C_DIM;
@@ -118,10 +120,17 @@ struct Resolved {
 // mandan el nombre en el scan response, no en el primer advertising, y
 // si resolviéramos solo con el paquete de hoy un dispositivo identificado
 // hace 3 paquetes volvería a Unknown en el próximo que no traiga nombre.
-Resolved resolve(uint16_t effectiveCompanyId, const String &effectiveLocalName, bool fpConfidenceLow)
+Resolved resolve(uint16_t effectiveCompanyId, uint8_t effectiveMfgTypeByte,
+                  const String &effectiveLocalName, bool fpConfidenceLow)
 {
     if (const signaturedb::Entry *e = signaturedb::matchByCompanyId(effectiveCompanyId)) {
         return {e->category, e->alertProfile, fpConfidenceLow || !e->verified};
+    }
+    // Find My antes que el heurístico de auriculares por nombre: un AirTag
+    // no suele anunciar nombre, pero si lo hiciera, el type byte es mucho
+    // más confiable que un substring de texto.
+    if (signaturedb::matchFindMyNetwork(effectiveCompanyId, effectiveMfgTypeByte)) {
+        return {signaturedb::Category::FindMyTracker, signaturedb::AlertProfile::SuspiciousDefault, fpConfidenceLow};
     }
     if (signaturedb::matchHeadsetByName(effectiveLocalName)) {
         return {signaturedb::Category::Headset, signaturedb::AlertProfile::HeadsetLowPriority, fpConfidenceLow};
@@ -224,8 +233,11 @@ void drawSignalBars(int x, int y, int rssi, uint16_t color)
 bool isIdentified(signaturedb::Category c) { return c != signaturedb::Category::Unknown; }
 
 // Orden de la lista, por prioridad: 1) sospechosos de convoy (la alerta
-// más seria), 2) resultados identificados (sabemos qué son -- son los
-// interesantes), 3) todo lo demás. Dentro de cada grupo, por RSSI desc.
+// más seria, salvo que sea tuyo -- ver `trusted`), 2) resultados
+// identificados (sabemos qué son -- son los interesantes), 3) todo lo
+// demás, 4) marcados como propios (ya los conocés, no urge mirarlos; un
+// AirTag tuyo que vas a llevar siempre contigo calificaría para el
+// grupo 1 si no fuera por esto). Dentro de cada grupo, por RSSI desc.
 // Compartido entre drawList() y la selección por teclado -- ambos tienen
 // que ver exactamente el mismo orden, si no cursorIndex apunta a una fila
 // distinta de la que se ve.
@@ -237,8 +249,9 @@ std::vector<size_t> sortedOrder()
     std::sort(order.begin(), order.end(), [](size_t a, size_t b) {
         const sightingstore::Record *ra = sightingstore::byIndex(a);
         const sightingstore::Record *rb = sightingstore::byIndex(b);
-        bool convoyA = convoyanalyzer::isSuspect(ra->fingerprintHash);
-        bool convoyB = convoyanalyzer::isSuspect(rb->fingerprintHash);
+        if (ra->trusted != rb->trusted) return !ra->trusted; // no-trusted primero
+        bool convoyA = !ra->trusted && convoyanalyzer::isSuspect(ra->fingerprintHash);
+        bool convoyB = !rb->trusted && convoyanalyzer::isSuspect(rb->fingerprintHash);
         if (convoyA != convoyB) return convoyA;
         bool idA = isIdentified(ra->category);
         bool idB = isIdentified(rb->category);
@@ -284,8 +297,11 @@ void drawList()
         const sightingstore::Record *r = sightingstore::byIndex(order[absIndex]);
         if (!r) continue;
         int y = LIST_TOP + static_cast<int>(i) * ROW_H;
-        bool convoySuspect = convoyanalyzer::isSuspect(r->fingerprintHash);
-        uint16_t color = categoryColor(r->category, r->confidenceLow);
+        // Un dispositivo marcado como propio nunca se muestra como
+        // sospechoso de convoy, aunque el score le dé igual -- ver
+        // sortedOrder() y processSightings() para el por qué.
+        bool convoySuspect = !r->trusted && convoyanalyzer::isSuspect(r->fingerprintHash);
+        uint16_t color = r->trusted ? C_ON : categoryColor(r->category, r->confidenceLow);
         bool sel = selectable && static_cast<int>(absIndex) == cursorIndex;
 
         if (sel) canvas.fillRect(0, y, SCREEN_W, ROW_H - 1, C_HUD);
@@ -299,8 +315,8 @@ void drawList()
         uint16_t rowBg = sel ? C_HUD : C_BG;
         canvas.setTextDatum(middle_left);
         canvas.setTextColor(convoySuspect ? C_ACCENT : color, rowBg);
-        canvas.drawString((sel ? "> " : "  ") + String(convoySuspect ? "!SIGUE" : categoryLabel(r->category)),
-                           6, y + ROW_H / 2);
+        const char *label = convoySuspect ? "!SIGUE" : (r->trusted ? "mio" : categoryLabel(r->category));
+        canvas.drawString((sel ? "> " : "  ") + String(label), 6, y + ROW_H / 2);
 
         canvas.setTextColor(C_DIM, rowBg);
         canvas.setTextDatum(middle_right);
@@ -357,8 +373,10 @@ void drawDetail()
 
     canvas.setFont(&fonts::Font0);
     canvas.setTextDatum(middle_left);
-    canvas.setTextColor(categoryColor(r->category, r->confidenceLow), C_BG);
-    canvas.drawString(categoryLabel(r->category), 4, 9);
+    canvas.setTextColor(r->trusted ? C_ON : categoryColor(r->category, r->confidenceLow), C_BG);
+    canvas.drawString(r->trusted ? String(categoryLabel(r->category)) + " [MIO]"
+                                   : String(categoryLabel(r->category)),
+                       4, 9);
     canvas.setTextDatum(middle_right);
     canvas.setTextColor(C_DIM, C_BG);
     canvas.drawString(r->lastMac, SCREEN_W - 4, 9);
@@ -405,8 +423,9 @@ void drawDetail()
         r->macChanges > 0 ? C_WARN : C_DIM);
 
     uint8_t convoyScore = convoyanalyzer::score(r->fingerprintHash);
-    bool convoySuspect = convoyanalyzer::isSuspect(r->fingerprintHash);
-    row("score seguimiento", String(convoyScore) + "/100", convoySuspect ? C_ACCENT : C_DIM);
+    bool convoySuspect = !r->trusted && convoyanalyzer::isSuspect(r->fingerprintHash);
+    row("score seg.", String(convoyScore) + "/100" + (r->trusted ? " (mio)" : ""),
+        convoySuspect ? C_ACCENT : (r->trusted ? C_ON : C_DIM));
 
     if (r->confidenceLow) {
         canvas.setTextDatum(middle_center);
@@ -514,7 +533,9 @@ void render()
 
     if (screen == Screen::Detail) {
         drawDetail();
-        drawFooter("enter: seguir   del: volver");
+        const sightingstore::Record *r = sightingstore::byFingerprint(selectedFingerprint);
+        drawFooter((r && r->trusted) ? "enter: seguir   t: ya no es mio   del: volver"
+                                      : "enter: seguir   t: marcar como mio   del: volver");
         canvas.pushSprite(0, 0);
         dirty = false;
         return;
@@ -622,6 +643,10 @@ void handleKeyboard()
             if (!blescanner::scanning()) blescanner::start();
             dirty = true;
         }
+        if (hasChar(ks, "t")) {
+            sightingstore::setTrusted(selectedFingerprint, !sightingstore::isTrusted(selectedFingerprint));
+            dirty = true;
+        }
         if (ks.del) {
             screen = Screen::List;
             dirty = true;
@@ -679,6 +704,7 @@ void processSightings()
     for (const auto &raw : batch) {
         fingerprint::AdvInput fin;
         fin.companyId = raw.companyId;
+        fin.mfgTypeByte = raw.mfgTypeByte;
         fin.payloadLen = raw.payloadLen;
         fin.txPowerDbm = raw.txPowerDbm;
         fin.serviceUuids16 = raw.serviceUuids16;
@@ -696,10 +722,12 @@ void processSightings()
         const sightingstore::Record *existing = sightingstore::byFingerprint(fp.hash);
         uint16_t effectiveCompanyId = raw.companyId != 0xFFFF ? raw.companyId
                                      : (existing ? existing->lastCompanyId : 0xFFFF);
+        uint8_t effectiveMfgTypeByte = raw.mfgTypeByte != 0 ? raw.mfgTypeByte
+                                      : (existing ? existing->lastMfgTypeByte : 0);
         String effectiveLocalName = raw.localName.length() ? raw.localName
                                    : (existing ? existing->lastLocalName : String());
 
-        Resolved res = resolve(effectiveCompanyId, effectiveLocalName, fp.confidenceLow);
+        Resolved res = resolve(effectiveCompanyId, effectiveMfgTypeByte, effectiveLocalName, fp.confidenceLow);
 
         sightingstore::SightingInput input;
         input.fingerprintHash = fp.hash;
@@ -708,6 +736,7 @@ void processSightings()
         input.category = res.category;
         input.confidenceLow = res.confidenceLow;
         input.companyId = raw.companyId;
+        input.mfgTypeByte = raw.mfgTypeByte;
         input.txPowerDbm = raw.txPowerDbm;
         input.payloadLen = raw.payloadLen;
         input.localName = raw.localName;
@@ -715,8 +744,15 @@ void processSightings()
         sightingstore::Record rec;
         sightingstore::SightingKind kind = sightingstore::record(input, rec);
 
-        if (kind == sightingstore::SightingKind::New ||
-            kind == sightingstore::SightingKind::MacRotated) {
+        // Marcado como propio ("es mío", ver Detail/tecla t) -- no alerta
+        // ni cuenta como sospechoso de convoy. El caso típico es justo
+        // esto: tu propio AirTag está siempre con vos, así que SIEMPRE
+        // va a parecer que te sigue -- la única forma de que la app sea
+        // útil contra rastreo ajeno es que vos le digas cuál es el tuyo.
+        bool trusted = sightingstore::isTrusted(fp.hash);
+
+        if (!trusted && (kind == sightingstore::SightingKind::New ||
+                          kind == sightingstore::SightingKind::MacRotated)) {
             alertengine::trigger(res.alertProfile, fp.hash);
         }
 
@@ -724,7 +760,7 @@ void processSightings()
         // que le importa es "en qué contexto se vio este fingerprint", y
         // eso pasa en cada paquete, no solo cuando cambia de estado.
         convoyanalyzer::onSighting(fp.hash);
-        if (convoyanalyzer::isSuspect(fp.hash)) {
+        if (!trusted && convoyanalyzer::isSuspect(fp.hash)) {
             alertengine::trigger(signaturedb::AlertProfile::ConvoySuspect, fp.hash);
         }
 

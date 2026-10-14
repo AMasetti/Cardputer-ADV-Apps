@@ -223,6 +223,53 @@ sabía (una vez identificado, no se "olvida" por un paquete sin nombre), y
 `record()` persiste la categoría recalculada en cada paquete, no solo al
 crear el registro.
 
+**Bug real encontrado y corregido (v0.9.0): el nombre anunciado no se
+mostraba en la lista principal.** `category`/`confidenceLow` sí se
+recalculaban en cada paquete (fix de arriba), pero eso solo decide la
+franja de color -- el *label* de la fila en `drawList()` seguía siendo
+`categoryLabel(r->category)` a secas, y un dispositivo sin firma conocida
+en `SignatureDB` (ej. un reloj Casio que anuncia BLE pero no matchea
+ningún company id/heurística) siempre caía en `"unknown"`, aunque
+`r->lastLocalName` ya tuviera el nombre real -- visible en Detalle, pero
+nunca en la lista. Ahora el label usa `lastLocalName` cuando hay uno
+(hasta 12 caracteres, truncado), y solo cae a `categoryLabel()` si no hay
+nombre. El color/franja de categoría no cambia -- "sabemos el nombre" y
+"sabemos qué tipo de dispositivo es" son cosas distintas, un nombre
+anunciado no verifica nada por sí solo. Como el label se lee de
+`lastLocalName` en cada render (no se cachea), si el nombre llega recién
+en una vuelta de scan posterior, se corrige solo en el próximo
+redibujado.
+
+**Nuevo (v0.9.0): log a SD ahora es opt-in, apagado por defecto.** Antes
+`sighting_store::begin()` abría el log de historial y grababa todo evento
+`New`/`MacRotated` automáticamente en cuanto había una tarjeta SD montada
+-- sin forma de desactivarlo ni de elegir cuándo grabar. Grabar
+continuamente no debería ser el comportamiento implícito solo porque hay
+una tarjeta puesta: ahora `setLoggingEnabled()`/`loggingEnabled()`
+(`sighting_store.h`) gatean la escritura real, con la tecla `l` como
+toggle desde `main.cpp` y arrancando en `false` siempre. El chip de
+estado en el HUD (antes "SD OK"/"SD --") ahora distingue "hay tarjeta"
+de "estoy grabando" ("LOG ON"/"LOG OFF"/"SD --"). Apagar el log es solo
+sobre el archivo -- no toca `records` en RAM ni nada del resto del store.
+
+**Nuevo (v0.9.0): la lista principal solo muestra dispositivos
+"activos"** (un paquete nuevo en los últimos 10s, `ACTIVE_TIMEOUT_MS` en
+`main.cpp`). Antes la lista acumulaba todo lo visto en la sesión -- un
+dispositivo del que ya te alejaste hace minutos seguía ahí para siempre,
+mezclado con lo que de verdad está cerca ahora. El filtro vive en
+`sortedOrder()` (compartido por `drawList()` y la navegación por
+teclado) y es **puramente de UI**: no borra ni oculta nada de
+`sighting_store` (`records` sigue el Record toda la sesión, lo necesitan
+Detalle/Seguimiento), y el log a SD -- si está prendido -- sigue
+registrando todo lo que pasa por `record()` exactamente igual, visible en
+la lista o no; un dispositivo puede desaparecer de la pantalla sin dejar
+de loggearse, son cosas independientes. El filtro **no se aplica con el
+scan pausado**: pausar es justamente para congelar la lista y elegir algo
+de ahí (`;`/`.` + `enter`), y como `lastSeenMs` no avanza para nadie
+mientras está pausado, aplicar el timeout ahí haría que la lista se
+vaciara sola mientras la estás mirando -- lo opuesto de para qué se
+pausa.
+
 ## 6. Exportación como registro/evidencia
 
 **Implementado:** `src/export_module.h/.cpp`, tecla `e` desde la lista.

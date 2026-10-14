@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.9.0]
+- Fix: la lista principal mostraba "unknown" aunque el dispositivo sí
+  anunciara un nombre (ej. relojes Casio con BLE) -- ese nombre solo se
+  veía al entrar a Detalle. La fila ahora muestra el nombre anunciado
+  cuando lo hay (hasta 12 caracteres), y recién si no hay nombre cae a la
+  categoría de SignatureDB. Es solo el label de la fila: el color/franja
+  de categoría sigue siendo el de SignatureDB (un nombre no verifica qué
+  tipo de dispositivo es). Como se lee de `lastLocalName` en cada render,
+  si el nombre llega en un paquete posterior (scan response, no el primer
+  advertising) se corrige solo en el próximo redibujado, sin lógica extra.
+- Nuevo: log continuo a SD ahora es **opt-in, apagado por defecto** --
+  antes se grababa automáticamente en cuanto había tarjeta montada, sin
+  forma de desactivarlo. Toggle con la tecla `l`; el chip de estado (antes
+  "SD OK"/"SD --") ahora muestra "LOG ON"/"LOG OFF"/"SD --" para que se
+  vea la diferencia entre "hay tarjeta" y "estoy grabando". Apagar el log
+  no borra ni afecta nada de `sighting_store` en RAM -- solo el archivo.
+- Nuevo: la lista principal ahora solo muestra dispositivos "activos"
+  (vistos en los últimos 10s) -- antes se acumulaba todo lo visto en la
+  sesión, incluidos dispositivos de los que el usuario ya se alejó hace
+  rato. El filtro es solo de UI: `sighting_store` sigue el Record para
+  toda la sesión (lo necesitan Detalle/Seguimiento) y el log a SD (si está
+  prendido) sigue registrando todo lo que pasa por `record()`, visible en
+  la lista o no -- un dispositivo puede "desaparecer" de la pantalla sin
+  dejar de loggearse. El filtro no aplica con el scan pausado (pausar es
+  para elegir de la lista, no para que se vacíe sola mientras la mirás).
+
 ## [0.8.1]
 - Fix: la burbuja de proximidad usaba el rango teórico de BLE (-95dBm a
   -40dBm) para mapear la señal a tamaño. En hardware real (Cardputer +

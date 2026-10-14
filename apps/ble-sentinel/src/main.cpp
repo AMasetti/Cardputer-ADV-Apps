@@ -26,6 +26,7 @@
 //   del                   volver un paso atrás (seguimiento <- detalle <- lista)
 //   c                     marcar "cambié de lugar" (nuevo contexto, ver ConvoyAnalyzer)
 //   e                     exportar lo visto hasta ahora (CSV + JSON + hash) a SD
+//   l                     prender/apagar el log continuo a SD (arranca apagado)
 //   +/-                   volumen master
 #include <M5Cardputer.h>
 #include <SD.h>
@@ -195,11 +196,18 @@ void drawStatusBar()
     canvas.fillRect(0, HUD_H, SCREEN_W, STATUS_H, C_BG);
     int y = HUD_H + 1;
     drawChip(4, y, 46, alertengine::enabled() ? "AUDIO ON" : "MUTE", alertengine::enabled(), C_ON);
-    drawChip(54, y, 36, sdOk ? "SD OK" : "SD --", sdOk, C_ON);
+
+    // El chip de SD ahora refleja si se está grabando, no solo si hay
+    // tarjeta puesta -- grabar es opt-in (tecla `l`, arranca apagado, ver
+    // sighting_store.h), así que "hay SD" y "estoy grabando" son estados
+    // distintos y el usuario necesita ver cuál de los dos es.
+    const char *sdLabel = !sdOk ? "SD --" : (sightingstore::loggingEnabled() ? "LOG ON" : "LOG OFF");
+    bool sdChipOn = sdOk && sightingstore::loggingEnabled();
+    drawChip(54, y, 42, sdLabel, sdChipOn, C_ON);
 
     canvas.setTextDatum(middle_left);
     canvas.setTextColor(C_DIM, C_BG);
-    canvas.drawString(String("ctx ") + convoyanalyzer::currentContext(), 94, y + 6);
+    canvas.drawString(String("ctx ") + convoyanalyzer::currentContext(), 100, y + 6);
 
     canvas.setTextDatum(middle_right);
     canvas.setTextColor(C_DIM, C_BG);
@@ -232,6 +240,18 @@ void drawSignalBars(int x, int y, int rssi, uint16_t color)
 // es Unknown -- ahí no sabemos nada.
 bool isIdentified(signaturedb::Category c) { return c != signaturedb::Category::Unknown; }
 
+// Un dispositivo deja de anunciarse en cuanto sale de rango -- pero el
+// Record se queda para siempre en `records` (vive toda la sesión, lo
+// necesitan Detalle/Seguimiento y el log a SD). Sin esto, la lista
+// principal terminaba mostrando todo lo que se vio alguna vez, incluidos
+// dispositivos de los que ya te alejaste hace minutos. "Activo" es un
+// filtro solo de UI: no borra nada de `records`, no afecta el log a SD
+// (eso sigue pasando en record(), indepdendiente de si la UI lo muestra o
+// no) -- apagar la pantalla de un dispositivo no es lo mismo que dejar de
+// registrarlo.
+constexpr uint32_t ACTIVE_TIMEOUT_MS = 10000; // ~10s sin un paquete nuevo = "ya no está"
+bool isActive(const sightingstore::Record *r) { return millis() - r->lastSeenMs < ACTIVE_TIMEOUT_MS; }
+
 // Orden de la lista, por prioridad: 1) sospechosos de convoy (la alerta
 // más seria, salvo que sea tuyo -- ver `trusted`), 2) resultados
 // identificados (sabemos qué son -- son los interesantes), 3) todo lo
@@ -241,11 +261,24 @@ bool isIdentified(signaturedb::Category c) { return c != signaturedb::Category::
 // Compartido entre drawList() y la selección por teclado -- ambos tienen
 // que ver exactamente el mismo orden, si no cursorIndex apunta a una fila
 // distinta de la que se ve.
+//
+// Filtra a solo "activos" (ver isActive) -- PERO solo mientras el scan
+// está corriendo. Pausado (el usuario paró el scan a propósito para
+// elegir algo de la lista), lastSeenMs no avanza para nadie: aplicar el
+// timeout ahí haría que la lista se vaciara sola mientras la estás
+// mirando, que es exactamente lo contrario de lo que se pausa para hacer.
 std::vector<size_t> sortedOrder()
 {
-    size_t n = sightingstore::count();
-    std::vector<size_t> order(n);
-    for (size_t i = 0; i < n; i++) order[i] = i;
+    size_t total = sightingstore::count();
+    bool filterStale = blescanner::scanning();
+    std::vector<size_t> order;
+    order.reserve(total);
+    for (size_t i = 0; i < total; i++) {
+        const sightingstore::Record *r = sightingstore::byIndex(i);
+        if (!r) continue;
+        if (filterStale && !isActive(r)) continue;
+        order.push_back(i);
+    }
     std::sort(order.begin(), order.end(), [](size_t a, size_t b) {
         const sightingstore::Record *ra = sightingstore::byIndex(a);
         const sightingstore::Record *rb = sightingstore::byIndex(b);
@@ -265,18 +298,24 @@ void drawList()
 {
     canvas.fillRect(0, LIST_TOP, SCREEN_W, SCREEN_H - LIST_TOP, C_BG);
 
-    size_t n = sightingstore::count();
+    std::vector<size_t> order = sortedOrder(); // ya filtra a "activos" (ver sortedOrder())
+    size_t n = order.size();
 
     if (n == 0) {
         canvas.setFont(&fonts::Font0);
         canvas.setTextDatum(middle_center);
         canvas.setTextColor(C_DIM, C_BG);
-        canvas.drawString(blescanner::scanning() ? "Escaneando..." : "Scan detenido",
-                           SCREEN_W / 2, LIST_TOP + (SCREEN_H - LIST_TOP) / 2);
+        // Distinguir "todavía no vimos nada" de "vimos cosas pero ya se
+        // alejaron todas" -- son estados distintos y el segundo confundía
+        // sin este mensaje (pantalla vacía sin explicación, con el scan
+        // corriendo, mientras la lista real seguía creciendo adentro).
+        const char *msg = sightingstore::count() == 0
+            ? (blescanner::scanning() ? "Escaneando..." : "Scan detenido")
+            : "sin dispositivos activos";
+        canvas.drawString(msg, SCREEN_W / 2, LIST_TOP + (SCREEN_H - LIST_TOP) / 2);
         return;
     }
 
-    std::vector<size_t> order = sortedOrder();
     bool selectable = !blescanner::scanning();
     bool scrollable = n > static_cast<size_t>(MAX_VISIBLE_ROWS);
 
@@ -315,8 +354,20 @@ void drawList()
         uint16_t rowBg = sel ? C_HUD : C_BG;
         canvas.setTextDatum(middle_left);
         canvas.setTextColor(convoySuspect ? C_ACCENT : color, rowBg);
-        const char *label = convoySuspect ? "!SIGUE" : (r->trusted ? "mio" : categoryLabel(r->category));
-        canvas.drawString((sel ? "> " : "  ") + String(label), 6, y + ROW_H / 2);
+        // Mostrar el nombre anunciado si lo tenemos, en vez de forzar
+        // "unknown" -- muchos dispositivos (ej. relojes Casio) no matchean
+        // ninguna firma de SignatureDB pero sí anuncian su nombre, y antes
+        // ese nombre solo se veía en Detalle, nunca en la lista principal.
+        // La categoría/color de fondo sigue siendo la de SignatureDB (no
+        // confundir "sabemos el nombre" con "sabemos qué tipo de
+        // dispositivo es" -- un nombre no verifica nada por sí solo).
+        String label = convoySuspect ? "!SIGUE" : (r->trusted ? "mio" : String());
+        if (!label.length() && r->lastLocalName.length()) {
+            label = r->lastLocalName;
+            if (label.length() > 12) label = label.substring(0, 12);
+        }
+        if (!label.length()) label = categoryLabel(r->category);
+        canvas.drawString((sel ? "> " : "  ") + label, 6, y + ROW_H / 2);
 
         canvas.setTextColor(C_DIM, rowBg);
         canvas.setTextDatum(middle_right);
@@ -514,6 +565,13 @@ constexpr uint32_t FOLLOW_RENDER_INTERVAL_MS = 60;
 void render()
 {
     if (screen == Screen::Follow) dirty = true; // animación continua, no depende de nuevos avistamientos
+    // La lista también necesita redibujarse sola mientras escanea, aunque
+    // no llegue ningún sighting nuevo -- sortedOrder() filtra por "activo"
+    // contra millis() actual (ver su comentario), y sin esto un dispositivo
+    // que se alejó solo desaparecía de la pantalla cuando llegaba el
+    // siguiente paquete de CUALQUIER otro dispositivo, no al momento real
+    // en que se cumplió el timeout.
+    if (screen == Screen::List && blescanner::scanning()) dirty = true;
 
     static uint32_t lastRenderMs = 0;
     uint32_t now = millis();
@@ -549,9 +607,9 @@ void render()
     if (toastActive) {
         drawFooter(toastMsg.c_str());
     } else if (!blescanner::scanning() && sightingstore::count() > 0) {
-        drawFooter("; . mover   enter: detalle   e: exportar   space: scan");
+        drawFooter("; . mover   enter: detalle   e: exportar   l: log SD");
     } else {
-        drawFooter("c: lugar   space: scan   +/- vol   G0: audio");
+        drawFooter("c: lugar   space: scan   l: log SD   G0: audio");
     }
     canvas.pushSprite(0, 0);
     dirty = false;
@@ -600,13 +658,30 @@ void handleKeyboard()
         String base = exportmodule::exportNow();
         showToast(base.length() ? ("exportado: " + base) : "sin SD, no exporte");
     }
+    if (hasChar(ks, "l")) {
+        // Toggle del log a SD -- arranca apagado por defecto (ver
+        // sighting_store.h), grabar no debería ser implícito solo porque
+        // hay una tarjeta puesta.
+        bool nowOn = !sightingstore::loggingEnabled();
+        sightingstore::setLoggingEnabled(nowOn);
+        if (nowOn && !sightingstore::sdAvailable()) {
+            showToast("sin SD, no hay donde grabar");
+        } else {
+            showToast(nowOn ? "log a SD: ON" : "log a SD: OFF");
+        }
+        dirty = true;
+    }
 
     if (screen == Screen::List) {
         // Selección solo con el scan pausado: la lista queda congelada
         // (nada nuevo llega de blescanner), así cursorIndex apunta siempre
         // a la misma fila mientras el usuario navega.
         if (!blescanner::scanning()) {
-            size_t n = sightingstore::count();
+            // Pausado, sortedOrder() no filtra por "activo" (ver su
+            // comentario) -- acá order.size() y sightingstore::count()
+            // coinciden siempre, pero llamamos una sola vez y reusamos.
+            std::vector<size_t> order = sortedOrder();
+            size_t n = order.size();
             if (n > 0) {
                 // Rango completo de la lista, no solo las filas visibles --
                 // drawList() hace scroll para que cursorIndex siempre se vea.
@@ -622,7 +697,6 @@ void handleKeyboard()
                     dirty = true;
                 }
                 if (ks.enter) {
-                    std::vector<size_t> order = sortedOrder();
                     if (cursorIndex < static_cast<int>(order.size())) {
                         const sightingstore::Record *r = sightingstore::byIndex(order[cursorIndex]);
                         if (r) {

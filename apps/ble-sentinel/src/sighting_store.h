@@ -63,6 +63,19 @@ void begin(bool sdReady);
 uint32_t sessionId();
 bool sdAvailable();
 
+// Log a SD de eventos (New/MacRotated) -- arranca APAGADO por defecto,
+// aunque haya tarjeta: grabar no debería ser el default implícito solo
+// porque hay una SD puesta, el usuario lo prende cuando de verdad quiere
+// dejar constancia. Toggleable en caliente con una tecla (ver main.cpp).
+// No afecta a `records` ni al resto del store -- es solo el log a
+// archivo; apagarlo no borra ni oculta nada de lo que ya se vio en esta
+// sesión, y un dispositivo puede dejar de verse en la UI (filtrado por
+// "activo") sin que eso tenga nada que ver con esto: mientras está
+// prendido, se loggea todo lo que pasa por record(), visible en la UI o
+// no.
+void setLoggingEnabled(bool on);
+bool loggingEnabled();
+
 // Entrada para record(): identidad resuelta (fingerprint/categoría, ya
 // decidida por el caller) + los campos crudos del advertising packet que
 // vale la pena guardar para la pantalla de detalle.

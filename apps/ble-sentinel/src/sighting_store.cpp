@@ -16,6 +16,7 @@ std::vector<Record> records;
 std::vector<uint64_t> trustedHashes; // cargado de TRUSTED_FILE en begin()
 uint32_t g_sessionId = 0;
 bool g_sdAvailable = false;
+bool g_loggingEnabled = false; // apagado por defecto -- ver setLoggingEnabled() en el header
 File historyLog;
 
 const char *categoryLabel(signaturedb::Category c)
@@ -105,7 +106,7 @@ void openHistoryLog()
 // definir un formato propio.
 void appendLogLine(const Record &r, SightingKind kind)
 {
-    if (!historyLog) return;
+    if (!g_loggingEnabled || !historyLog) return;
     const char *kindStr = kind == SightingKind::New ? "new"
                           : kind == SightingKind::MacRotated ? "mac_rotated"
                                                               : "update";
@@ -147,6 +148,9 @@ void begin(bool sdReady)
 
 uint32_t sessionId() { return g_sessionId; }
 bool sdAvailable() { return g_sdAvailable; }
+
+void setLoggingEnabled(bool on) { g_loggingEnabled = on; }
+bool loggingEnabled() { return g_loggingEnabled; }
 
 SightingKind record(const SightingInput &in, Record &out)
 {

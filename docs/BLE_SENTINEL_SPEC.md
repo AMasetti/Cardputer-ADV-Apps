@@ -108,11 +108,11 @@ honesta, por más cartel de disclaimer que tenga encima. Se reemplazó por:
   límite que parpadean**, sin importar cuánto se ajuste la zona muerta o
   qué tan lentos sean los filtros. Ajustar el threshold una tercera vez
   no iba a arreglar un problema de forma, no de calibración.
-- **v3 (0.8.0, actual): burbuja continua en vez de clasificación
+- **v3 (0.8.0): burbuja continua en vez de clasificación
   discreta**, estilo "Find Nearby" de Apple para AirTags. Una tercera EMA
   propia (`proximityFraction()` en `room_sweep.cpp`, alpha 0.05,
-  desacoplada de las EMA de debug) se mapea linealmente de -95dBm (0.0) a
-  -40dBm (1.0). En `drawFollow()`: un anillo exterior fijo marca el
+  desacoplada de las EMA de debug) se mapea linealmente a un rango de
+  RSSI. En `drawFollow()`: un anillo exterior fijo marca el
   "objetivo" (radio máximo), y un círculo interior relleno cuyo radio
   mostrado se desliza (lerp, factor 0.25 por frame a 60ms) hacia
   `maxR * proximityFraction()` -- la animación se reinicia de golpe si
@@ -126,9 +126,26 @@ honesta, por más cartel de disclaimer que tenga encima. Se reemplazó por:
   UI principal; `smoothedRssi()` y `trend()` siguen existiendo pero
   documentados como debug-only (el dBm crudo queda chico y abajo de la
   burbuja, solo de referencia).
+- **Rango de mapeo recalibrado en 0.8.1 -- bug real, no cosmético.** v3
+  mapeaba inicialmente el rango teórico de BLE (-95dBm lejos / -40dBm
+  cerca). En hardware real (Cardputer + ESP32-S3) ese rango nunca se
+  alcanza -- el usuario reportó -60dBm parado al lado del dispositivo y
+  -80dBm lejos, muy lejos de los extremos teóricos -- así que la burbuja
+  nunca llegaba a llenarse ni a vaciarse del todo, quedaba casi siempre a
+  mitad de tamaño sin importar la distancia real (el mismo tipo de "se ve
+  mal pero el filtro no tiene la culpa" que afectó a v1/v2, esta vez en el
+  rango de mapeo en vez de en la clasificación). `BUBBLE_RSSI_MIN`/`_MAX`
+  en `room_sweep.cpp` recalibrados a -85dBm/-55dBm (margen de 5dBm sobre
+  lo reportado, para no pegar en el tope/piso con el primer paso). Sigue
+  siendo una calibración a ojo con un solo reporte de campo, no medida
+  con un set de dispositivos/distancias -- candidata a reajuste si otros
+  dispositivos (con TX power/antena distinta) se sienten igual de
+  comprimidos.
 - **Tono de audio continuo opcional** (frecuencia sube cuanto más cerca,
-  300-1800Hz mapeado a -95/-40dBm), para buscar sin mirar la pantalla --
-  estilo detector de metales. Toggle con **G0 corto** (soltado antes del
+  300-1800Hz mapeado al mismo rango calibrado que la burbuja -- antes
+  tenía su propio rango hardcodeado -95/-40dBm, desincronizado de la
+  burbuja desde 0.8.1), para buscar sin mirar la pantalla -- estilo
+  detector de metales. Toggle con **G0 corto** (soltado antes del
   mantenido); G0 mantenido sigue siendo el mute global, sin cambios ahí.
   El flanco de bajada se detecta a mano comparando contra el estado del
   tick anterior, no con un método `wasReleased()` de la librería que no

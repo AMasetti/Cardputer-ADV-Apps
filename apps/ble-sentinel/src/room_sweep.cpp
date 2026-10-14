@@ -34,9 +34,16 @@ bool g_emaInit = false; // false hasta la primera muestra, para no arrancar en 0
 // suave y con confianza por sobre reaccionar rápido. No comparte estado
 // con g_emaFast/g_emaSlow (esas quedan solo para trend()/debug) para que
 // ajustar una no afecte a la otra.
+// Rango real observado en hardware (Cardputer + ESP32-S3), no el rango
+// teórico de BLE -- la antena/TX power de este equipo nunca llega a los
+// -40dBm "de libro" ni al lado del dispositivo, y -95dBm es un piso
+// demasiado generoso para "lejos" en la práctica (usuario reportó -60dBm
+// al lado, -80dBm lejos). Con el rango teórico la burbuja nunca se
+// llenaba ni se vaciaba del todo. Un poco de margen a cada lado (5dBm)
+// para no pegar en el tope/piso apenas se mueve un poco.
 constexpr float EMA_BUBBLE_ALPHA = 0.05f;
-constexpr float BUBBLE_RSSI_MIN = -95.0f; // fracción 0.0
-constexpr float BUBBLE_RSSI_MAX = -40.0f; // fracción 1.0
+constexpr float BUBBLE_RSSI_MIN = -85.0f; // fracción 0.0 (lejos)
+constexpr float BUBBLE_RSSI_MAX = -55.0f; // fracción 1.0 (al lado)
 float g_emaBubble = 0.0f;
 bool g_bubbleInit = false;
 
@@ -48,8 +55,8 @@ bool g_toneActive = false;
 uint16_t g_lastToneFreq = 0;
 uint32_t g_lastToneUpdateMs = 0;
 constexpr uint32_t TONE_UPDATE_INTERVAL_MS = 120;
-constexpr uint16_t TONE_FREQ_MIN = 300;  // -95dBm, lejos
-constexpr uint16_t TONE_FREQ_MAX = 1800; // -40dBm, cerca
+constexpr uint16_t TONE_FREQ_MIN = 300;  // BUBBLE_RSSI_MIN, lejos
+constexpr uint16_t TONE_FREQ_MAX = 1800; // BUBBLE_RSSI_MAX, cerca
 
 void silenceTone()
 {
@@ -181,9 +188,15 @@ void updateTone()
     if (now - g_lastToneUpdateMs < TONE_UPDATE_INTERVAL_MS) return;
     g_lastToneUpdateMs = now;
 
+    // Mismo rango calibrado que la burbuja (BUBBLE_RSSI_MIN/MAX) -- si no,
+    // el tono y la burbuja contarían dos historias distintas de "qué tan
+    // cerca" para la misma señal.
+    int rssiMin = static_cast<int>(BUBBLE_RSSI_MIN);
+    int rssiMax = static_cast<int>(BUBBLE_RSSI_MAX);
     int rssi = smoothedRssi();
-    int rssiClamped = rssi < -95 ? -95 : (rssi > -40 ? -40 : rssi);
-    uint16_t freq = TONE_FREQ_MIN + (rssiClamped + 95) * (TONE_FREQ_MAX - TONE_FREQ_MIN) / 55;
+    int rssiClamped = rssi < rssiMin ? rssiMin : (rssi > rssiMax ? rssiMax : rssi);
+    uint16_t freq = TONE_FREQ_MIN + static_cast<uint16_t>(
+        (rssiClamped - rssiMin) * (TONE_FREQ_MAX - TONE_FREQ_MIN) / (rssiMax - rssiMin));
 
     // Solo retrigger el tono si cambió lo suficiente -- reiniciar la forma
     // de onda cada 120ms con la misma frecuencia solo produce clicks.

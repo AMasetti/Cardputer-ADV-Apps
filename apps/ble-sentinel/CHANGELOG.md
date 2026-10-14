@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.8.1]
+- Fix: la burbuja de proximidad usaba el rango teórico de BLE (-95dBm a
+  -40dBm) para mapear la señal a tamaño. En hardware real (Cardputer +
+  ESP32-S3) ese rango nunca se alcanza: el usuario reportó -60dBm al lado
+  del dispositivo y -80dBm lejos, muy lejos de los extremos teóricos --
+  resultado, la burbuja nunca llegaba a llenarse ni a vaciarse del todo,
+  pasaba casi todo el tiempo a mitad de tamaño sin importar la distancia
+  real. Recalibrado a -85dBm (lejos, fracción 0.0) / -55dBm (al lado,
+  fracción 1.0), con margen de 5dBm a cada lado sobre lo reportado para no
+  pegar en el tope/piso con el primer paso. El tono de audio continuo
+  usaba su propio rango hardcodeado (-95/-40) para la frecuencia -- ahora
+  comparte el mismo rango calibrado que la burbuja, para no contar dos
+  historias distintas de "qué tan cerca" para la misma señal.
+- **Limitación conocida:** este rango está calibrado a ojo con un solo
+  reporte de campo, no medido con un set de dispositivos/distancias. TX
+  power y antena varían por dispositivo rastreado (no todos son iguales),
+  así que -55/-85 es una aproximación razonable, no una calibración
+  exacta. Si en uso real sigue sin llenarse/vaciarse del todo con otros
+  dispositivos, estos valores son candidatos a ajustar de nuevo.
+
 ## [0.8.0]
 - Rediseño de la pantalla de Seguimiento: la clasificación discreta
   "acercándose/estable/alejándose" (v1 con split de ventana cruda, v2 en

@@ -112,12 +112,18 @@ struct Resolved {
     bool confidenceLow;
 };
 
-Resolved resolve(const blescanner::RawSighting &raw, bool fpConfidenceLow)
+// Toma companyId/localName "efectivos" (ver processSightings: el llamador
+// ya los mezcló con lo que el Record ya sabía de paquetes anteriores), no
+// el paquete crudo de este sighting puntual -- muchos dispositivos recién
+// mandan el nombre en el scan response, no en el primer advertising, y
+// si resolviéramos solo con el paquete de hoy un dispositivo identificado
+// hace 3 paquetes volvería a Unknown en el próximo que no traiga nombre.
+Resolved resolve(uint16_t effectiveCompanyId, const String &effectiveLocalName, bool fpConfidenceLow)
 {
-    if (const signaturedb::Entry *e = signaturedb::matchByCompanyId(raw.companyId)) {
+    if (const signaturedb::Entry *e = signaturedb::matchByCompanyId(effectiveCompanyId)) {
         return {e->category, e->alertProfile, fpConfidenceLow || !e->verified};
     }
-    if (signaturedb::matchHeadsetByName(raw.localName)) {
+    if (signaturedb::matchHeadsetByName(effectiveLocalName)) {
         return {signaturedb::Category::Headset, signaturedb::AlertProfile::HeadsetLowPriority, fpConfidenceLow};
     }
     // Sin match: postura conservadora, se trata como sospechoso por defecto
@@ -682,7 +688,18 @@ void processSightings()
         // el resto del pipeline.
         fingerprint::Result fp = fingerprint::compute(fin);
 
-        Resolved res = resolve(raw, fp.confidenceLow);
+        // Mezclamos con lo que el Record ya sabía: muchos dispositivos
+        // mandan el nombre recién en el scan response, no en todos los
+        // paquetes, y si resolviéramos solo con el paquete de hoy,
+        // "olvidaríamos" la identificación en cuanto llegue un paquete sin
+        // nombre. Una vez que sabemos algo, no lo perdemos.
+        const sightingstore::Record *existing = sightingstore::byFingerprint(fp.hash);
+        uint16_t effectiveCompanyId = raw.companyId != 0xFFFF ? raw.companyId
+                                     : (existing ? existing->lastCompanyId : 0xFFFF);
+        String effectiveLocalName = raw.localName.length() ? raw.localName
+                                   : (existing ? existing->lastLocalName : String());
+
+        Resolved res = resolve(effectiveCompanyId, effectiveLocalName, fp.confidenceLow);
 
         sightingstore::SightingInput input;
         input.fingerprintHash = fp.hash;

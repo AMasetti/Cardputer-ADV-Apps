@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.6.1]
+- Fix real: `category`/`confidenceLow` de un `Record` solo se calculaban
+  en el primer paquete y nunca se actualizaban después. Muchos
+  dispositivos mandan el nombre recién en el scan response, no en el
+  primer advertising -- si ese primer paquete no traía nombre, el
+  dispositivo quedaba clasificado como `Unknown` para siempre, aunque
+  packets posteriores sí revelaran quién era. `resolve()` ahora mezcla
+  el nombre/company ID del paquete de hoy con lo que el `Record` ya
+  sabía de antes, y `sighting_store::record()` persiste la categoría
+  recalculada en cada paquete, no solo al crear el registro.
+
 ## [0.6.0]
 - Scroll en la lista: con más dispositivos que filas visibles, `cursorIndex`
   pasa a ser un índice absoluto sobre toda la lista (no solo las filas en

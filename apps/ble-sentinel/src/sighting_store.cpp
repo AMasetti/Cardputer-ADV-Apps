@@ -151,6 +151,14 @@ SightingKind record(const SightingInput &in, Record &out)
     existing->lastCompanyId = in.companyId;
     existing->lastTxPowerDbm = in.txPowerDbm;
     existing->lastPayloadLen = in.payloadLen;
+    // category/confidenceLow SÍ se reemplazan siempre, no solo al crear:
+    // el caller (main.cpp) ya resolvió esto con los datos acumulados del
+    // dispositivo, no solo el paquete de hoy, así que esta categoría es al
+    // menos tan buena como la que ya teníamos -- nunca retrocede a Unknown
+    // por un paquete que no trajo nombre, pero sí mejora en cuanto llega
+    // una identificación nueva.
+    existing->category = in.category;
+    existing->confidenceLow = in.confidenceLow;
     out = *existing;
 
     // No logueamos cada Update (saturaría la SD con el ritmo de advertising

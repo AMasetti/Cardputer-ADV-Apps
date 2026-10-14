@@ -150,6 +150,18 @@ log append-only a SD en `/sentinel/history/session_<id>.log`, formato JSON
 por línea para que un `ExportModule` futuro o herramientas externas lo
 puedan leer directo).
 
+**Bug real encontrado y corregido (v0.6.1):** `category`/`confidenceLow`
+se calculaban una sola vez, en el primer paquete, y nunca se
+actualizaban. Muchos dispositivos mandan el nombre local recién en el
+scan response, no en el advertising inicial -- si ese primer paquete no
+traía nombre, el `Record` quedaba `Unknown` para siempre, aunque
+paquetes posteriores sí revelaran una identificación (ej. un auricular
+que recién después manda "AirPods"). `resolve()` en `main.cpp` ahora
+mezcla el company id/nombre del paquete de hoy con lo que el `Record` ya
+sabía (una vez identificado, no se "olvida" por un paquete sin nombre), y
+`record()` persiste la categoría recalculada en cada paquete, no solo al
+crear el registro.
+
 ## 6. Exportación como registro/evidencia
 
 **Implementado:** `src/export_module.h/.cpp`, tecla `e` desde la lista.

@@ -48,7 +48,7 @@ void recordTrigger(uint64_t hash, uint32_t nowMs)
             return;
         }
     }
-    cooldowns[nextSlot] = {hash, nowMs, true};
+    cooldowns[nextSlot] = CooldownSlot{hash, nowMs, true};
     nextSlot = (nextSlot + 1) % COOLDOWN_SLOTS;
 }
 

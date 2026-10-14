@@ -48,7 +48,14 @@ void recordTrigger(uint64_t hash, uint32_t nowMs)
             return;
         }
     }
-    cooldowns[nextSlot] = CooldownSlot{hash, nowMs, true};
+    // Asignación campo a campo, no brace-init: CooldownSlot tiene default
+    // member initializers, lo que la saca de ser agregado bajo el -std que
+    // usa este framework -- `CooldownSlot{a,b,c}` buscaría un constructor
+    // de 3 argumentos en vez de inicializar por posición.
+    CooldownSlot &slot = cooldowns[nextSlot];
+    slot.hash = hash;
+    slot.lastTriggerMs = nowMs;
+    slot.used = true;
     nextSlot = (nextSlot + 1) % COOLDOWN_SLOTS;
 }
 

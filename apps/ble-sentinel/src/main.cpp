@@ -482,9 +482,9 @@ void drawFollow()
 
     bool veryClose = frac > 0.85f;
     uint16_t bubbleColor = veryClose ? C_ON : C_ACCENT;
-    int r = static_cast<int>(displayR + 0.5f);
-    if (r < minR) r = minR;
-    canvas.fillCircle(cx, cy, r, bubbleColor);
+    int bubbleR = static_cast<int>(displayR + 0.5f);
+    if (bubbleR < minR) bubbleR = minR;
+    canvas.fillCircle(cx, cy, bubbleR, bubbleColor);
 
     // Lectura cruda chica abajo de la burbuja -- solo para debug, ya no es
     // la UI principal (ver room_sweep.h: el número solo no dice nada útil).

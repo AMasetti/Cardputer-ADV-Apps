@@ -1,11 +1,21 @@
 // "Seguir" un dispositivo puntual vía RSSI.
 //
-// Es nomás "más cerca / más lejos" (más fuerte = más cerca) con una
-// ventana corta de RSSI para suavizar el ruido y calcular tendencia. NO es
+// Es nomás "más cerca / más lejos" (más fuerte = más cerca). NO es
 // triangulación ni tiene información de dirección -- por eso la UI usa un
 // número grande + sparkline, no un radar: un radar sugiere posición/ángulo
 // que no podemos conocer, y eso termina siendo una interfaz engañosa para
 // lo que en realidad es una sola dimensión (distancia aproximada).
+//
+// RSSI de BLE real salta 10-15dBm aunque el dispositivo esté quieto y
+// cerca (multipath, orientación de antena, el propio cuerpo bloqueando la
+// señal) -- eso es física de RF, no un bug. v1 calculaba tendencia
+// comparando la primera mitad contra la segunda mitad de solo 8 muestras
+// crudas con una zona muerta de 3dBm: con ese nivel de ruido normal,
+// cualquier paquete puntual alcanzaba para voltear el resultado (decía
+// "acercándose" estando lejos y viceversa). v2 usa dos promedios móviles
+// exponenciales (rápido y lento, ver .cpp) y compara la diferencia entre
+// ellos -- un solo paquete ruidoso ya no alcanza para mover la aguja,
+// hace falta una tendencia sostenida de varios paquetes.
 //
 // También ofrece un modo de tono continuo (frecuencia sube cuanto más
 // cerca, estilo detector de metales) para buscar sin tener que mirar la
@@ -35,8 +45,8 @@ uint64_t followedHash();
 // followedHash() o si no se está siguiendo nada.
 void sample(uint64_t fingerprintHash, int8_t rssi);
 
-// Promedio corto (últimas N muestras) para que la lectura no tiemble con
-// cada paquete individual.
+// EMA rápida (ver .cpp) -- se mueve más que un promedio de ventana larga
+// pero no tiembla con cada paquete individual como el RSSI crudo.
 int8_t smoothedRssi();
 Trend trend();
 

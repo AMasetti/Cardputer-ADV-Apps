@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.1]
+- Fix: la tendencia en la pantalla de Seguimiento era errática (decía
+  "acercándose" lejos del dispositivo y viceversa). Causa real: RSSI de
+  BLE salta 10-15dBm aunque el dispositivo esté quieto y cerca (es física
+  de RF normal, no un bug), pero el cálculo comparaba apenas 4 muestras
+  crudas contra las otras 4 con una zona muerta de solo 3dBm -- un solo
+  paquete ruidoso alcanzaba para voltear el resultado. Reemplazado por
+  dos promedios móviles exponenciales (rápido/lento) y zona muerta sobre
+  la diferencia entre ambos: hace falta una tendencia sostenida de varios
+  paquetes para mover la aguja, no uno solo.
+- El número grande (`smoothedRssi()`) ahora muestra la EMA rápida en vez
+  de un promedio simple de ventana -- reacciona más parejo.
+
 ## [0.7.0]
 - Nuevo: detección de accesorios Find My de Apple (AirTag y similares).
   Company ID de Apple (0x004C) solo no alcanza -- todo dispositivo Apple

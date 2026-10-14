@@ -6,11 +6,28 @@ namespace roomsweep {
 
 namespace {
 
-// Ventana corta a propósito: esto es para "¿me estoy acercando ahora?",
-// no para tendencias de largo plazo (eso es trabajo de ConvoyAnalyzer).
+// Historial crudo para el sparkline -- ventana corta a propósito, es para
+// "¿cómo viene la señal ahora?", no para tendencias de largo plazo (eso es
+// trabajo de ConvoyAnalyzer). Se muestra sin filtrar porque el ruido real
+// es información (ver header): tapar eso en el gráfico sería mentir sobre
+// lo estable que es la señal.
 constexpr size_t HISTORY_LEN = 8;
 int8_t g_history[HISTORY_LEN];
 size_t g_historyCount = 0;
+
+// Dos EMA (promedio móvil exponencial) sobre el mismo RSSI, con distinta
+// velocidad de reacción -- el clásico "cruce rápido/lento" para detectar
+// tendencia sin que un solo paquete ruidoso la dispare. alpha más alto =
+// reacciona más rápido = pesa más el paquete de ahora.
+constexpr float EMA_FAST_ALPHA = 0.35f;
+constexpr float EMA_SLOW_ALPHA = 0.06f;
+// Zona muerta sobre la DIFERENCIA entre las dos EMA, no sobre el RSSI
+// crudo -- al estar ambas filtradas, una diferencia sostenida de 2.5dBm
+// entre ellas ya es señal real, no los 10-15dBm de ruido normal de RF.
+constexpr float TREND_DEAD_ZONE_DBM = 2.5f;
+float g_emaFast = 0.0f;
+float g_emaSlow = 0.0f;
+bool g_emaInit = false; // false hasta la primera muestra, para no arrancar en 0
 
 uint64_t g_followedHash = 0;
 bool g_following = false;
@@ -38,6 +55,7 @@ void begin()
     g_following = false;
     g_followedHash = 0;
     g_historyCount = 0;
+    g_emaInit = false;
     g_toneMode = false;
     silenceTone();
 }
@@ -47,6 +65,7 @@ void follow(uint64_t fingerprintHash)
     g_followedHash = fingerprintHash;
     g_following = true;
     g_historyCount = 0;
+    g_emaInit = false;
 }
 
 void stop()
@@ -71,32 +90,39 @@ void sample(uint64_t fingerprintHash, int8_t rssi)
         for (size_t i = 1; i < HISTORY_LEN; i++) g_history[i - 1] = g_history[i];
         g_history[HISTORY_LEN - 1] = rssi;
     }
+
+    if (!g_emaInit) {
+        // Primera muestra: arrancar ambas EMA en el valor real, no en 0 --
+        // si no, tardarían varios paquetes en "subir" desde cero y la
+        // tendencia inicial saldría falsa.
+        g_emaFast = g_emaSlow = static_cast<float>(rssi);
+        g_emaInit = true;
+    } else {
+        g_emaFast = EMA_FAST_ALPHA * rssi + (1.0f - EMA_FAST_ALPHA) * g_emaFast;
+        g_emaSlow = EMA_SLOW_ALPHA * rssi + (1.0f - EMA_SLOW_ALPHA) * g_emaSlow;
+    }
 }
 
 int8_t smoothedRssi()
 {
-    if (g_historyCount == 0) return 0;
-    int32_t sum = 0;
-    for (size_t i = 0; i < g_historyCount; i++) sum += g_history[i];
-    return static_cast<int8_t>(sum / static_cast<int32_t>(g_historyCount));
+    if (!g_emaInit) return 0;
+    return static_cast<int8_t>(g_emaFast + (g_emaFast >= 0 ? 0.5f : -0.5f)); // redondeo
 }
 
 Trend trend()
 {
-    if (g_historyCount < 4) return Trend::Stable; // poca data, no afirmamos nada
+    // Pedimos algunas muestras antes de afirmar nada, igual que v1, pero
+    // ahora la decisión real la toma el cruce de EMA, no un split de la
+    // ventana cruda -- eso es lo que hacía que un solo paquete ruidoso
+    // volteara el resultado.
+    if (!g_emaInit || g_historyCount < 4) return Trend::Stable;
 
-    size_t half = g_historyCount / 2;
-    int32_t oldSum = 0, newSum = 0;
-    for (size_t i = 0; i < half; i++) oldSum += g_history[i];
-    for (size_t i = g_historyCount - half; i < g_historyCount; i++) newSum += g_history[i];
-    int32_t oldAvg = oldSum / static_cast<int32_t>(half);
-    int32_t newAvg = newSum / static_cast<int32_t>(half);
-
-    // RSSI menos negativo = señal más fuerte = más cerca.
-    int32_t delta = newAvg - oldAvg;
-    constexpr int32_t DEAD_ZONE_DBM = 3; // ruido normal de RF, no es tendencia real
-    if (delta > DEAD_ZONE_DBM) return Trend::Closer;
-    if (delta < -DEAD_ZONE_DBM) return Trend::Farther;
+    // RSSI menos negativo = señal más fuerte = más cerca. Si la EMA rápida
+    // (reacciona a lo reciente) está por encima de la lenta (el promedio
+    // de más tiempo), la señal viene subiendo -> acercándose.
+    float delta = g_emaFast - g_emaSlow;
+    if (delta > TREND_DEAD_ZONE_DBM) return Trend::Closer;
+    if (delta < -TREND_DEAD_ZONE_DBM) return Trend::Farther;
     return Trend::Stable;
 }
 

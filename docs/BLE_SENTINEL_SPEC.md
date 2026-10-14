@@ -95,9 +95,20 @@ honesta, por más cartel de disclaimer que tenga encima. Se reemplazó por:
 - **Número grande** (RSSI suavizado) + **sparkline** de las últimas 8
   muestras crudas (sin promediar, para que se vea el ruido real) + texto
   de tendencia.
-- `roomsweep::trend()` compara la primera mitad contra la segunda mitad de
-  la ventana corta para decir "acercándose/alejándose/estable", con una
-  zona muerta de 3dBm para no leer ruido de RF como tendencia real.
+- `roomsweep::trend()` -- **bug real corregido en v0.7.1.** La versión
+  original comparaba la primera mitad contra la segunda mitad de la
+  ventana cruda de 8 muestras con una zona muerta de 3dBm. RSSI de BLE
+  real salta 10-15dBm aunque el dispositivo esté quieto y cerca (física
+  de RF normal: multipath, orientación de antena, el propio cuerpo) --
+  con ese ruido, un solo paquete puntual alcanzaba para voltear el
+  resultado ("acercándose" estando lejos y viceversa, reportado por el
+  usuario). Reemplazado por dos EMA (promedio móvil exponencial, alpha
+  0.35 rápida / 0.06 lenta) con zona muerta de 2.5dBm sobre la
+  **diferencia entre ambas**, no sobre el RSSI crudo: al estar las dos
+  filtradas, hace falta una tendencia sostenida de varios paquetes para
+  que la diferencia supere la zona muerta, un outlier aislado ya no
+  alcanza. `smoothedRssi()` (el número grande) también pasó a devolver
+  la EMA rápida en vez de un promedio simple de ventana.
 - **Tono de audio continuo opcional** (frecuencia sube cuanto más cerca,
   300-1800Hz mapeado a -95/-40dBm), para buscar sin mirar la pantalla --
   estilo detector de metales. Toggle con **G0 corto** (soltado antes del

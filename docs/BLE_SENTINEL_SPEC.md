@@ -329,6 +329,7 @@ Implementado: `src/alert_engine.h/.cpp`. Perfiles v1:
 |---|---|---|---|
 | Sospechoso (default — sin match, o match no verificado) | 100% | 1200Hz | 2 beeps |
 | Auricular/headset (heurística por nombre) | 35% | 800Hz | 1 beep |
+| Fabricante identificado (registro general, ver sección SignatureDB) | 0% (silencioso) | — | — |
 | Confiado/baseline | 0% (silencioso) | — | — |
 
 Cooldown de 60s por `fingerprint_hash` para evitar que un dispositivo fijo
@@ -346,7 +347,9 @@ navegación por teclado comparten estado:
   convoy, 2) resultados **identificados** (`category != Unknown` --
   tienen una categoría real de SignatureDB, son los interesantes aunque
   su RSSI sea peor que el de algo no identificado), 3) todo lo demás.
-  Dentro de cada grupo, por RSSI desc.
+  Dentro de cada grupo, por RSSI desc, con un **tiebreak final por orden
+  de inserción** (primera vez visto en la sesión) agregado en v0.10.0 --
+  ver bug real abajo.
 - **Scroll**: con el scan pausado, `cursorIndex` es un índice absoluto
   sobre toda la lista ordenada, no solo sobre las filas que entran en
   pantalla (`MAX_VISIBLE_ROWS`, hoy 8). `drawList()` calcula una ventana
@@ -355,6 +358,30 @@ navegación por teclado comparten estado:
   filas que lugar.
 - Mientras el scan sigue corriendo, la selección no existe (la lista se
   reordena sola con cada paquete) y siempre se ve desde el principio.
+- **Solo dispositivos "activos"** (v0.9.0): `sortedOrder()` filtra a los
+  vistos en los últimos `ACTIVE_TIMEOUT_MS` (10s), pero solo mientras el
+  scan corre -- pausado no, porque `lastSeenMs` no avanza para nadie y
+  aplicar el timeout ahí vaciaría la lista sola mientras la estás
+  mirando. Es un filtro de UI nomás: no afecta `sighting_store` (sigue el
+  Record toda la sesión) ni el log a SD si está prendido.
+- **Label de la fila**: nombre anunciado > fabricante (match del
+  registro general de company IDs) > categoría genérica (v0.10.0, ver
+  sección SignatureDB).
+
+**Bug real corregido (v0.10.0): la lista se reordenaba sin motivo.** El
+comparador de `sortedOrder()` terminaba en "por RSSI desc" sin ningún
+criterio para romper empates. RSSI real salta varios dBm por paquete
+(misma física de RF que afecta a `room_sweep`, ver sección 3) -- dos
+dispositivos con RSSI igual, o que se cruzan entre un paquete y el
+siguiente, podían volver de `std::sort` en cualquier orden relativo cada
+vez (`std::sort` no garantiza estabilidad). Antes de v0.9.0 era invisible
+porque todo lo no identificado decía "unknown" igual, no había forma de
+notar cuál era cuál; en cuanto 0.9.0 empezó a mostrar el nombre real en
+la fila, ese reordenamiento sin sentido se volvió visible, reportado como
+"los dispositivos con nombre van de arriba a abajo". Fix: tiebreak final
+por índice de inserción (orden en que se vio por primera vez cada
+fingerprint en la sesión) -- determinístico, no depende de que el
+algoritmo de sort sea estable.
 
 ## SignatureDB — estado de las firmas
 
@@ -365,6 +392,54 @@ están marcados `verified = true` porque ambos proyectos coinciden; `0x01AB`
 y `0x03C2` quedan `verified = false` porque hay discrepancia entre fuentes
 o no se confirmaron de forma independiente. Cualquier entrada no verificada
 sube `confidenceLow` en el `Record` resultante, visible en la UI con un `?`.
+
+**Registro general de fabricantes — nuevo en v0.10.0.** Hasta 0.9.0,
+`TABLE[]` solo tenía las 4 firmas de smart glasses -- cualquier otro
+company ID, aunque fuera perfectamente identificable, caía en
+`Category::Unknown`. Se agregó un subconjunto curado a mano (~60
+entradas) del registro **oficial** de company identifiers del Bluetooth
+SIG (no un proyecto de terceros reconstruyéndolo -- la fuente es la
+autoridad que asigna los IDs, así que estas entradas van `verified =
+true`): electrónica de consumo reconocible (Samsung, Google, Microsoft,
+Garmin, Sony, Bose, Harman/JBL, Casio, Seiko, Sonos, routers/laptops
+comunes, etc.) bajo `Category::IdentifiedVendor`, más dos extensiones a
+categorías ya existentes:
+- **Cámaras de acción** (GoPro, Insta360/Arashi Vision) suman al mismo
+  bucket que smart glasses (`Category::SmartGlasses`) -- el criterio es
+  "diseñado para grabar", no "tiene forma de anteojos".
+- **Robots** (iRobot, Anki, Ninebot/Segway) suman al mismo bucket que
+  drones (`Category::DroneRemoteId`) -- "algo autónomo/teleoperado
+  cerca", aunque un Roomba no vuele.
+
+No es el registro completo (~4000 entradas, mayormente integradores
+B2B/industriales sin relevancia para detectar vigilancia) -- es un
+subconjunto elegido a mano de lo más reconocible para uso personal. El
+label de la lista principal ahora cae a `vendorLabel` de este registro
+cuando el dispositivo no anunció nombre propio (antes, sin nombre, era
+siempre "unknown" aunque el company ID fuera identificable).
+
+**Código de colores — nuevo en v0.10.0**, pedido explícitamente por el
+usuario, reemplaza la paleta anterior (rojo=sospechoso / gris=auricular /
+ámbar=sin verificar):
+
+| Color | Categoría |
+|---|---|
+| Blanco | `Unknown` -- no sabemos nada |
+| Azul | `SmartGlasses` (incluye cámaras de acción) -- "meta o filmación" |
+| Violeta | `DroneRemoteId` (incluye robots) -- "drones y robots" |
+| Rojo | `FindMyTracker` |
+| Verde | `Headset` o `IdentifiedVendor` -- "otro dispositivo identificado", todo tranquilo |
+
+**Cambio de comportamiento visual deliberado:** antes `Unknown` se
+pintaba rojo ("sin match -> tratado como sospechoso por defecto", la
+postura conservadora del AlertEngine). Ahora es blanco/neutro. Esto es
+**solo visual** -- el audio no cambió, `Category::Unknown` sigue
+resolviendo a `AlertProfile::SuspiciousDefault` en `resolve()`
+(`main.cpp`), así que un dispositivo sin identificar sigue sonando a
+volumen pleno igual que antes, solo que ya no se ve rojo en la lista. Los
+nuevos matches de `IdentifiedVendor` usan `AlertProfile::Silent` a
+propósito -- no tiene sentido que un Garmin o un router al lado suenen
+igual que algo real sin identificar.
 
 **Find My de Apple (AirTag y otros accesorios) — implementado en v0.7.0.**
 Company ID 0x004C (Apple) **no alcanza solo**: todo dispositivo Apple

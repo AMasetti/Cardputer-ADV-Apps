@@ -11,6 +11,18 @@
 // glasses con cámara. Hay discrepancias menores entre ambos proyectos sobre
 // algunos de ellos -> quedan marcados `verified = false` hasta confirmarlos
 // contra una captura real o el registro oficial del Bluetooth SIG.
+//
+// El resto de la tabla (drones/robots, cámaras de acción, y el bucket
+// genérico de "otro fabricante identificado") sí viene del registro
+// oficial de company identifiers del Bluetooth SIG
+// (https://www.bluetooth.com/specifications/assigned-numbers/, YAML público
+// en bitbucket.org/bluetooth-SIG/public) -- esos quedan `verified = true`
+// porque la fuente es la autoridad que asigna los IDs, no un proyecto de
+// terceros reconstruyéndolos. Es un subconjunto curado a mano (los
+// fabricantes de consumo más reconocibles), no las ~4000 entradas
+// completas del registro -- la mayoría son integradores B2B/industriales
+// sin relevancia para detectar vigilancia, y cargarlas todas infla el
+// binario sin agregar nada útil a esta app.
 #pragma once
 
 #include <Arduino.h>
@@ -19,12 +31,27 @@ namespace signaturedb {
 
 enum class Category : uint8_t {
     Unknown,        // sin match -> tratado como sospechoso por defecto
-    SmartGlasses,   // Meta Ray-Ban/Oakley, Snap Spectacles, etc.
+    SmartGlasses,   // Meta Ray-Ban/Oakley, Snap Spectacles -- también cámaras de
+                    // acción (GoPro, Insta360): el bucket "meta o filmación" de
+                    // la UI (azul) agrupa cualquier dispositivo cuyo propósito
+                    // central es grabar, no solo anteojos.
     DroneRemoteId,  // ASTM F3411 Remote ID (matcheado por service UUID, no company ID)
+                    // -- también robots (iRobot, Anki, Ninebot/Segway): bucket
+                    // "drones y robots" de la UI (violeta). No son lo mismo
+                    // (un Roomba no vuela), pero comparten el mismo nivel de
+                    // atención ("hay algo autónomo/teleoperado cerca") y no
+                    // justifican una categoría de UI separada todavía.
     Headset,        // heurística por nombre, ver matchByName()
     FindMyTracker,  // accesorio Find My de Apple (ver matchFindMyNetwork()) -- AirTag es
                     // el caso más común, pero el mismo type byte lo usan otros
                     // accesorios Find My, así que no afirmamos "es un AirTag" puntual.
+    IdentifiedVendor, // company ID matcheado contra el registro general de
+                      // Bluetooth SIG (ver matchByCompanyId()/TABLE) pero sin
+                      // ninguna razón particular para alertar -- un Garmin, un
+                      // Sonos, un router. Bucket "otro dispositivo identificado"
+                      // de la UI (verde == "todo tranquilo"): se diferencia de
+                      // Unknown en que SÍ sabemos qué es, solo que no es un tipo
+                      // de dispositivo que esta app esté pensada para vigilar.
 };
 
 // Nombres de perfil de alerta que consume alert_engine. Separado de

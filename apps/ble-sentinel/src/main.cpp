@@ -79,7 +79,7 @@ uint32_t toastUntilMs = 0;
 // Paleta compartida con el resto del repo (shell-rc, led-rc): fondo casi
 // negro, barra de HUD gris oscuro, acento rojo porque esto es una app de
 // seguridad (alarma), verde/gris para "todo tranquilo".
-uint16_t C_BG, C_HUD, C_TEXT, C_DIM, C_ACCENT, C_ON, C_OFF, C_WARN;
+uint16_t C_BG, C_HUD, C_TEXT, C_DIM, C_ACCENT, C_ON, C_OFF, C_WARN, C_BLUE, C_VIOLET;
 
 const char *categoryLabel(signaturedb::Category c)
 {
@@ -88,21 +88,40 @@ const char *categoryLabel(signaturedb::Category c)
         case signaturedb::Category::DroneRemoteId: return "DRONE";
         case signaturedb::Category::Headset: return "headset";
         case signaturedb::Category::FindMyTracker: return "FINDMY";
+        case signaturedb::Category::IdentifiedVendor: return "known";
         default: return "unknown";
     }
 }
 
+// Código de colores pedido explícitamente por el usuario:
+//   blanco  = unknown (no sabemos nada -- ya no se pinta como sospechoso
+//             por defecto, ver nota abajo)
+//   azul    = "meta o filmación" (smart glasses, cámaras de acción)
+//   violeta = drones y robots
+//   rojo    = Find My (Apple)
+//   verde   = otro dispositivo identificado (headset, o vendor genérico
+//             del registro de Bluetooth SIG) -- "todo tranquilo"
+//
+// Cambio de comportamiento visual deliberado respecto a v1: antes
+// Unknown se pintaba rojo ("sin match -> tratado como sospechoso").
+// Sigue siendo tratado como sospechoso para el AUDIO (AlertProfile::
+// SuspiciousDefault no cambió, ver signature_db.cpp) -- lo que cambia es
+// solo el color, para que la paleta separe "no sé qué es" (blanco,
+// neutro) de "sé qué es y es un tipo de dispositivo que vigilo" (rojo).
 uint16_t categoryColor(signaturedb::Category c, bool confidenceLow)
 {
     switch (c) {
         case signaturedb::Category::SmartGlasses:
+            return confidenceLow ? C_WARN : C_BLUE;
         case signaturedb::Category::DroneRemoteId:
+            return confidenceLow ? C_WARN : C_VIOLET;
         case signaturedb::Category::FindMyTracker:
             return confidenceLow ? C_WARN : C_ACCENT;
         case signaturedb::Category::Headset:
-            return C_DIM;
+        case signaturedb::Category::IdentifiedVendor:
+            return C_ON;
         default:
-            return C_ACCENT; // sin match -> tratado como sospechoso, ver signature_db.h
+            return C_TEXT; // Unknown -- blanco, neutro (ver AlertProfile en signature_db.h)
     }
 }
 
@@ -159,6 +178,8 @@ void initColors()
     C_ON = canvas.color565(80, 210, 110);      // verde: audio activo / ok
     C_OFF = canvas.color565(50, 50, 58);
     C_WARN = canvas.color565(230, 160, 40);    // ámbar: firma sin verificar
+    C_BLUE = canvas.color565(70, 140, 230);    // azul: meta/filmación
+    C_VIOLET = canvas.color565(170, 90, 230);  // violeta: drones/robots
 }
 
 // --- Dibujo ------------------------------------------------------------------------
@@ -267,6 +288,20 @@ bool isActive(const sightingstore::Record *r) { return millis() - r->lastSeenMs 
 // elegir algo de la lista), lastSeenMs no avanza para nadie: aplicar el
 // timeout ahí haría que la lista se vaciara sola mientras la estás
 // mirando, que es exactamente lo contrario de lo que se pausa para hacer.
+//
+// Bug real corregido: el comparador terminaba en "por RSSI desc" sin
+// ningún criterio más para romper empates -- con RSSI real saltando
+// varios dBm por paquete (ver room_sweep.h, misma física de RF), dos
+// dispositivos con RSSI igual o que cruzan entre sí de un paquete al
+// siguiente podían volver de std::sort en cualquier orden relativo cada
+// vez (no es estable), así que la lista se reordenaba solo entre ellos
+// sin que nada relevante hubiera cambiado. Antes era invisible porque
+// todo lo no identificado decía "unknown" igual; en cuanto la fila
+// empezó a mostrar el nombre real, ese reordenamiento se volvió visible y
+// se leía como "los dispositivos con nombre saltan de arriba a abajo".
+// Tiebreak final por índice de inserción (orden en que se vieron por
+// primera vez en la sesión) -- determinístico, no depende de que
+// std::sort sea estable.
 std::vector<size_t> sortedOrder()
 {
     size_t total = sightingstore::count();
@@ -289,7 +324,8 @@ std::vector<size_t> sortedOrder()
         bool idA = isIdentified(ra->category);
         bool idB = isIdentified(rb->category);
         if (idA != idB) return idA;
-        return ra->lastRssi > rb->lastRssi;
+        if (ra->lastRssi != rb->lastRssi) return ra->lastRssi > rb->lastRssi;
+        return a < b; // empate real -- orden determinístico, no azar de std::sort
     });
     return order;
 }
@@ -354,19 +390,25 @@ void drawList()
         uint16_t rowBg = sel ? C_HUD : C_BG;
         canvas.setTextDatum(middle_left);
         canvas.setTextColor(convoySuspect ? C_ACCENT : color, rowBg);
-        // Mostrar el nombre anunciado si lo tenemos, en vez de forzar
-        // "unknown" -- muchos dispositivos (ej. relojes Casio) no matchean
-        // ninguna firma de SignatureDB pero sí anuncian su nombre, y antes
-        // ese nombre solo se veía en Detalle, nunca en la lista principal.
-        // La categoría/color de fondo sigue siendo la de SignatureDB (no
-        // confundir "sabemos el nombre" con "sabemos qué tipo de
-        // dispositivo es" -- un nombre no verifica nada por sí solo).
+        // Prioridad del label: nombre anunciado > fabricante (si matchea
+        // algo del registro de company IDs) > categoría genérica. Muchos
+        // dispositivos (ej. relojes Casio) no matchean ninguna firma de
+        // SignatureDB pero sí anuncian su nombre; otros no anuncian
+        // nombre pero su company ID sí está en el registro general del
+        // Bluetooth SIG -- en cualquiera de los dos casos es más útil que
+        // "unknown" a secas. El color/franja de categoría no cambia con
+        // esto (no confundir "sabemos el nombre/fabricante" con "sabemos
+        // qué TIPO de dispositivo es" -- ver categoryColor()).
         String label = convoySuspect ? "!SIGUE" : (r->trusted ? "mio" : String());
         if (!label.length() && r->lastLocalName.length()) {
             label = r->lastLocalName;
-            if (label.length() > 12) label = label.substring(0, 12);
+        } else if (!label.length()) {
+            if (const signaturedb::Entry *e = signaturedb::matchByCompanyId(r->lastCompanyId)) {
+                label = e->vendorLabel;
+            }
         }
         if (!label.length()) label = categoryLabel(r->category);
+        if (label.length() > 12) label = label.substring(0, 12);
         canvas.drawString((sel ? "> " : "  ") + label, 6, y + ROW_H / 2);
 
         canvas.setTextColor(C_DIM, rowBg);

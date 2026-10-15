@@ -26,6 +26,7 @@ const char *categoryLabel(signaturedb::Category c)
         case signaturedb::Category::DroneRemoteId: return "drone";
         case signaturedb::Category::Headset: return "headset";
         case signaturedb::Category::FindMyTracker: return "findmy";
+        case signaturedb::Category::IdentifiedVendor: return "identified_vendor";
         default: return "unknown";
     }
 }

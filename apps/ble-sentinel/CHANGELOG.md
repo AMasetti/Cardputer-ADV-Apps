@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.10.0]
+- Fix real: la lista principal se reordenaba sola entre dispositivos sin
+  que nada relevante cambiara -- el comparador de `sortedOrder()` en
+  `main.cpp` terminaba en "por RSSI desc" sin ningún criterio para romper
+  empates, y `std::sort` no es estable: con RSSI real saltando varios dBm
+  por paquete, dos dispositivos con RSSI igual (o que se cruzan de un
+  paquete al siguiente) podían volver en cualquier orden relativo cada
+  vez. Antes era invisible porque todo lo no identificado decía
+  "unknown" igual (no se notaba cuál era cuál); en cuanto 0.9.0 empezó a
+  mostrar el nombre real, ese reordenamiento sin sentido se volvió
+  visible ("los dispositivos con nombre van de arriba a abajo"). Tiebreak
+  final agregado: orden de inserción (primera vez visto en la sesión),
+  determinístico.
+- Nuevo: registro general de fabricantes (company identifiers oficiales
+  del Bluetooth SIG, no solo las firmas de amenaza existentes) -- ~60
+  entradas curadas a mano de electrónica de consumo reconocible (Samsung,
+  Google, Garmin, Sony, Bose/JBL, Casio, Seiko, Sonos, routers, etc.) más
+  cámaras de acción (GoPro, Insta360) y robots/drones (DJI, iRobot, Anki,
+  Ninebot). El label de la lista principal ahora prioriza: nombre
+  anunciado > fabricante (si matchea algo del registro) > categoría
+  genérica -- antes, sin nombre anunciado, siempre caía en "unknown"
+  aunque el company ID fuera identificable.
+- Nuevo: código de colores explícito por categoría (antes solo
+  rojo=sospechoso vs. gris=auricular vs. ámbar=sin verificar): **blanco**
+  = unknown, **azul** = smart glasses/cámaras de acción ("meta o
+  filmación"), **violeta** = drones y robots, **rojo** = Find My,
+  **verde** = otro dispositivo identificado (auricular, o vendor
+  genérico del registro -- "todo tranquilo"). Cambio de comportamiento
+  visual deliberado: antes Unknown se pintaba rojo ("tratado como
+  sospechoso por defecto"); ahora es blanco/neutro. El audio NO cambió --
+  `AlertProfile::SuspiciousDefault` sigue siendo el default para Unknown,
+  solo cambia el color en pantalla. Los nuevos matches de fabricante
+  genérico (`Category::IdentifiedVendor`) usan `AlertProfile::Silent` --
+  no tiene sentido que un Garmin o un router suenen igual que un
+  dispositivo real sin identificar.
+
 ## [0.9.0]
 - Fix: la lista principal mostraba "unknown" aunque el dispositivo sí
   anunciara un nombre (ej. relojes Casio con BLE) -- ese nombre solo se

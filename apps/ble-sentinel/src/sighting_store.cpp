@@ -150,6 +150,21 @@ void begin(bool sdReady)
 uint32_t sessionId() { return g_sessionId; }
 bool sdAvailable() { return g_sdAvailable; }
 
+void resetSession()
+{
+    records.clear();
+    // `trustedHashes` NO se toca -- lo marcado como propio sigue siéndolo
+    // entre reinicios de sesión, igual que entre reinicios reales del
+    // dispositivo (persiste a SD independiente de esto).
+    if (g_sdAvailable) {
+        if (historyLog) historyLog.close(); // si no, el archivo viejo queda abierto y pisado
+        g_sessionId = loadAndBumpSessionId();
+        openHistoryLog();
+    } else {
+        g_sessionId++; // sin SD no hay persistencia real, es solo para que el HUD muestre otro número
+    }
+}
+
 void setLoggingEnabled(bool on) { g_loggingEnabled = on; }
 bool loggingEnabled() { return g_loggingEnabled; }
 

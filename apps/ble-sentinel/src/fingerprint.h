@@ -30,6 +30,7 @@ struct AdvInput {
     int8_t txPowerDbm = INT8_MIN;
     std::vector<uint16_t> serviceUuids16; // ya ordenados por el caller
     uint8_t adTypesPresentMask = 0;       // bitmask liviano de qué AD types trae
+    bool remoteIdService = false;         // ASTM Remote ID (ver ble_scanner.h)
 };
 
 // Resultado del cálculo. confidenceLow indica que el payload era muy pobre

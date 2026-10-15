@@ -43,6 +43,7 @@ Result compute(const AdvInput &in)
     mix(h, in.payloadLen);
     mix(h, static_cast<uint8_t>(txPowerBucket(in.txPowerDbm)));
     mix(h, in.adTypesPresentMask);
+    mix(h, in.remoteIdService ? 1 : 0);
 
     // serviceUuids16 ya viene ordenado por el caller: mismo set -> mismo
     // hash sin importar el orden en que NimBLE los reportó.
@@ -55,7 +56,12 @@ Result compute(const AdvInput &in)
     // Payload pobre: sin manufacturer data y sin service UUIDs, solo queda
     // payloadLen + txPower como entrada -> fingerprint débil, muchos
     // dispositivos distintos pueden colisionar en el mismo hash.
-    r.confidenceLow = (in.companyId == 0xFFFF) && in.serviceUuids16.empty();
+    // Remote ID es la excepción: un match de `remoteIdService` es una señal
+    // tan específica como un company ID (es un UUID puntual, no un default
+    // "no hay nada acá"), así que por sí sola ya basta para no bajar la
+    // confianza aunque no haya manufacturer data ni otros service UUIDs --
+    // de hecho los Remote ID típicos no tienen manufacturer data.
+    r.confidenceLow = (in.companyId == 0xFFFF) && in.serviceUuids16.empty() && !in.remoteIdService;
 
     return r;
 }

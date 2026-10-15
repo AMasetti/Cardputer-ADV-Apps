@@ -55,6 +55,24 @@ class ScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
         s.txPowerDbm = d->haveTXPower() ? d->getTXPower() : INT8_MIN;
         s.payloadLen = d->getPayloadLength();
         s.serviceUuids16 = extractServiceUuids16(d);
+
+        // ASTM Remote ID (ver ble_scanner.h): Service Data (AD 0x16), no la
+        // lista de Service UUIDs -- hay que mirar getServiceData*(), no
+        // getServiceUUID*(). Solo nos importa si está presente el UUID
+        // 0xFFFA, no decodificamos el mensaje ODID (Basic ID/Location/
+        // Self-ID/etc.) todavía -- mismo nivel de profundidad que el resto
+        // de las firmas v1 (presencia, no contenido).
+        if (d->haveServiceData()) {
+            size_t sdCount = d->getServiceDataCount();
+            for (size_t i = 0; i < sdCount; i++) {
+                NimBLEUUID uuid = d->getServiceDataUUID(i);
+                if (uuid.bitSize() == 16 && uuid.getNative()->u16.value == 0xFFFA) {
+                    s.remoteIdService = true;
+                    break;
+                }
+            }
+        }
+
         if (d->haveName()) s.localName = d->getName().c_str();
 
         std::lock_guard<std::mutex> lock(queueLock);

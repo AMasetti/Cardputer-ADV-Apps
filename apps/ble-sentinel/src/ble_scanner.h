@@ -30,6 +30,13 @@ struct RawSighting {
     uint8_t payloadLen = 0;
     int8_t txPowerDbm = INT8_MIN;
     std::vector<uint16_t> serviceUuids16; // ordenados
+    // ASTM Remote ID (drones) -- UUID 0xFFFA asignado por el Bluetooth SIG
+    // a "ASTM Remote ID" (assigned_numbers/uuids/sdo_uuids.yaml del
+    // registro público). Viaja en el AD type Service Data (0x16), NO en la
+    // lista general de Service UUIDs (0x02/0x03) que ya se extrae arriba
+    // -- son dos estructuras AD distintas, por eso necesita su propio campo
+    // en vez de reusar serviceUuids16.
+    bool remoteIdService = false;
     String localName;                     // puede venir vacío
 };
 

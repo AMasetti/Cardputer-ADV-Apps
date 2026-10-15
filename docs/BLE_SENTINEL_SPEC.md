@@ -477,13 +477,49 @@ colisionen en el mismo fingerprint por compartir company ID.
   separado de la tabla `TABLE[]` por company ID porque necesita un segundo
   campo -- no es una `Entry` más.
 
-**Pendiente:** Remote ID de drones (ASTM F3411, matcheo por service UUID,
-no por company ID — el UUID exacto no se confirmó en la investigación
-previa, hay que validarlo contra `opendroneid-core-c` antes de implementar
-el matcher). Firmas de Unitree, GoPro, dashcams, Tile/SmartTag (formato
-propio de Samsung/Tile, no Find My) — todas pendientes de captura real o
-de portar desde un proyecto open-source equivalente, mismo criterio que
-con NoPeek.
+**Remote ID de drones (ASTM F3411) — implementado en v0.11.0.** El UUID
+que estaba pendiente de confirmar se verificó contra la fuente primaria:
+el registro público oficial del Bluetooth SIG
+(`assigned_numbers/uuids/sdo_uuids.yaml` en bitbucket.org/bluetooth-SIG/public)
+asigna `0xFFFA` explícitamente a **"ASTM Remote ID"**. No es de un
+proyecto de terceros reconstruyéndolo (a diferencia de los company ID de
+smart glasses de arriba) -- es la fuente que asigna los UUIDs.
+
+- **Viaja en Service Data (AD type `0x16`), no en la lista general de
+  Service UUIDs** (AD types `0x02`/`0x03`, que es lo que ya extraía
+  `extractServiceUuids16()` en `ble_scanner.cpp` desde v1). Son dos
+  estructuras AD distintas en el advertising packet -- confundirlas
+  habría hecho que el matcher nunca disparara contra drones reales. Se
+  agregó lectura separada vía `haveServiceData()`/`getServiceDataUUID()`
+  de NimBLE (confirmado contra el header de la versión exacta que fija
+  `platformio.ini`, NimBLE-Arduino 1.4.3).
+- **Solo detecta presencia del UUID, no decodifica el mensaje ODID**
+  (Basic ID, Location, Self-ID, System, Operator ID -- los distintos
+  tipos de mensaje que ASTM F3411 define sobre Bluetooth Legacy
+  Advertising). Mismo nivel de profundidad que el resto de las firmas
+  v1: "hay algo de este tipo acá", no "esto es exactamente qué dron,
+  dónde está volando, quién lo opera". Decodificar el mensaje completo
+  (número de serie, posición GPS del dron, posición del operador) sería
+  un salto de alcance real -- el formato ASTM F3411 está especificado en
+  un documento de pago, y portar la decodificación completa desde
+  `opendroneid-core-c` sin poder validarla contra un dron real durante
+  esta sesión habría sido una apuesta a ciegas, mismo criterio que con
+  WiFiSniffer arriba.
+- Campo nuevo `remoteIdService` en `RawSighting`/`AdvInput`
+  (`ble_scanner.h`/`fingerprint.h`), mezclado en el fingerprint hash.
+  Un dron típico no trae manufacturer data ni Service UUIDs genéricos,
+  así que antes de esto su fingerprint habría quedado `confidenceLow`
+  (ver sección 1) -- `remoteIdService` por sí solo ahora cuenta como
+  señal fuerte, igual que un company ID matcheado.
+- Resuelto antes que cualquier otra cosa en `resolve()` (`main.cpp`): es
+  la señal más específica disponible, no tiene sentido que un match de
+  company ID (más genérico) lo tape.
+
+**Firmas aún pendientes:** Unitree (robot cuadrúpedo, no confirmado en el
+registro de company IDs), dashcams genéricas, Tile/Samsung SmartTag con
+su protocolo propio (no Find My) -- pendientes de captura real o de
+portar desde un proyecto open-source equivalente, mismo criterio que con
+NoPeek.
 
 ## Dispositivos "propios" (trusted)
 
@@ -511,3 +547,34 @@ Un dispositivo `trusted`:
   de lo no identificado -- ya se sabe qué es, no urge mirarlo.
 - Se muestra en verde con la etiqueta "mio" en vez de la categoría o de
   "!SIGUE", tanto en la lista como en Detalle (`[MIO]` junto al label).
+
+## Sesión y persistencia -- qué sobrevive un reinicio y qué no
+
+Distinción explícita para que quede claro qué guarda qué:
+
+| Estado | Sobrevive reinicio real | Reset de sesión (`r`, v0.11.0) |
+|---|---|---|
+| `trusted` (dispositivos "mío") | Sí, SD (`trusted.txt`) | No se toca |
+| `records` (lo visto en esta sesión) | No, nunca existió | **Se limpia** |
+| Estado de `ConvoyAnalyzer` (contextos/score) | No, nunca existió | **Se limpia** |
+| Log a SD (`session_<id>.log`) | El archivo sí, en SD | Se cierra y se abre uno nuevo (`session_id`++) |
+| Mute/volumen/log-a-SD habilitado | **No, a propósito** | Sin cambios (no es estado de sesión) |
+
+**Decisión explícita (v0.11.0): mute/volumen/log-a-SD NO persisten entre
+reinicios reales**, pedido así directamente -- cada power-on arranca en
+los defaults de siempre (mute, log apagado, volumen default). No hay
+mecanismo de guardado para esto y no está pensado agregarlo salvo que se
+pida lo contrario más adelante.
+
+**Reset de sesión (tecla `r`, cualquier pantalla) — nuevo en v0.11.0:**
+pensado para probar en el campo sin reiniciar el dispositivo entero cada
+vez que se quiere "empezar de nuevo". `sightingstore::resetSession()`
+limpia `records` y, si hay log a SD prendido, cierra el archivo de
+historial actual y abre uno nuevo bajo un `session_id` incrementado (para
+que una corrida de prueba no quede mezclada con la anterior en el mismo
+archivo). También limpia `ConvoyAnalyzer` (`convoyanalyzer::begin()`) y
+fuerza la vuelta a la pantalla de Lista si se estaba en Detalle o
+Seguimiento (esos `selectedFingerprint`/`followedHash` quedarían
+apuntando a un Record que ya no existe). Sin confirmación -- una tecla,
+un efecto, mismo criterio que `c`/`e`/`l`; el hardware no tiene diálogo
+modal para pedir "¿estás seguro?".

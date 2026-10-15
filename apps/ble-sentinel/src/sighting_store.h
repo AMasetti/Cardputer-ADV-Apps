@@ -76,6 +76,17 @@ bool sdAvailable();
 void setLoggingEnabled(bool on);
 bool loggingEnabled();
 
+// Reinicia la sesión de prueba SIN reiniciar el dispositivo (tecla `r` en
+// main.cpp) -- limpia `records` (todo lo visto hasta ahora en RAM) para
+// empezar una corrida de campo nueva. Si hay SD, también cierra el log de
+// historial actual y abre uno nuevo bajo un session_id incrementado
+// (mismo mecanismo que begin(), para que el archivo de esta corrida no se
+// mezcle con la anterior) -- sin SD, `sessionId()` igual se incrementa en
+// RAM nomás, solo para que el HUD distinga una corrida de la siguiente.
+// `trusted` NO se toca (ver setTrusted()): lo marcado como propio no
+// debería tener que remarcarse en cada reset de prueba.
+void resetSession();
+
 // Entrada para record(): identidad resuelta (fingerprint/categoría, ya
 // decidida por el caller) + los campos crudos del advertising packet que
 // vale la pena guardar para la pantalla de detalle.

@@ -35,12 +35,20 @@ enum class Category : uint8_t {
                     // acción (GoPro, Insta360): el bucket "meta o filmación" de
                     // la UI (azul) agrupa cualquier dispositivo cuyo propósito
                     // central es grabar, no solo anteojos.
-    DroneRemoteId,  // ASTM F3411 Remote ID (matcheado por service UUID, no company ID)
-                    // -- también robots (iRobot, Anki, Ninebot/Segway): bucket
-                    // "drones y robots" de la UI (violeta). No son lo mismo
-                    // (un Roomba no vuela), pero comparten el mismo nivel de
-                    // atención ("hay algo autónomo/teleoperado cerca") y no
-                    // justifican una categoría de UI separada todavía.
+    DroneRemoteId,  // ASTM F3411 Remote ID -- matcheado por `remoteIdService`
+                    // (ver ble_scanner.h/fingerprint.h), NO por company ID:
+                    // es el UUID 0xFFFA en el AD type Service Data (0x16),
+                    // asignado por el Bluetooth SIG a "ASTM Remote ID"
+                    // (registro oficial, assigned_numbers/uuids/sdo_uuids.yaml)
+                    // -- confirmado contra la fuente, no de un proyecto de
+                    // terceros. Solo detecta presencia del UUID, no decodifica
+                    // el mensaje ODID (Basic ID/Location/Self-ID/etc.).
+                    // También robots (iRobot, Anki, Ninebot/Segway, por
+                    // company ID igual que el resto de IdentifiedVendor):
+                    // bucket "drones y robots" de la UI (violeta). No son lo
+                    // mismo (un Roomba no vuela), pero comparten el mismo
+                    // nivel de atención ("hay algo autónomo/teleoperado
+                    // cerca") y no justifican una categoría de UI separada.
     Headset,        // heurística por nombre, ver matchByName()
     FindMyTracker,  // accesorio Find My de Apple (ver matchFindMyNetwork()) -- AirTag es
                     // el caso más común, pero el mismo type byte lo usan otros

@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.11.0]
+- Nuevo: detección real de drones (`Category::DroneRemoteId`) -- hasta
+  ahora la categoría existía pero nada la poblaba. Se matchea por
+  presencia del UUID `0xFFFA` en el AD type Service Data (0x16) de los
+  advertising packets, que el Bluetooth SIG asigna explícitamente a
+  "ASTM Remote ID" (confirmado contra el registro público oficial,
+  `assigned_numbers/uuids/sdo_uuids.yaml`, no un proyecto de terceros).
+  No decodifica el mensaje ODID (Basic ID/Location/Self-ID/etc.), solo
+  detecta presencia -- mismo nivel de profundidad que el resto de las
+  firmas v1. `ble_scanner`/`fingerprint` ganan un campo `remoteIdService`
+  nuevo (mezclado en el fingerprint hash); `resolve()` en `main.cpp` lo
+  chequea antes que nada más, porque es la señal más específica
+  disponible. Un dispositivo Remote ID típicamente no trae manufacturer
+  data ni service UUIDs genéricos -- antes eso lo marcaba
+  `confidenceLow`, ahora `remoteIdService` por sí solo basta para no
+  bajar la confianza.
+- Nuevo: reiniciar la sesión de prueba sin reiniciar el dispositivo,
+  tecla `r` -- pedido explícitamente para poder repetir pruebas de campo
+  rápido. Limpia todo lo visto hasta ahora (`sighting_store::
+  resetSession()`) y el estado de `ConvoyAnalyzer`; si hay log a SD
+  prendido, cierra el archivo de historial actual y abre uno nuevo bajo
+  un `session_id` incrementado, para no mezclar una corrida con la
+  siguiente en el mismo archivo. Lo marcado como "mío" (`trusted`) NO se
+  toca -- no debería haber que remarcar el propio AirTag en cada reset.
+  Deliberadamente sin confirmación (una tecla, un efecto, mismo criterio
+  que `c`/`e`/`l` -- el hardware no tiene diálogo modal).
+- Decisión explícita, no implementada a propósito: **no** se agrega
+  persistencia de configuración (mute/volumen/log-a-SD) entre reinicios
+  reales del dispositivo -- pedido así por el usuario. Sigue arrancando
+  en los defaults de siempre (mute, log apagado) cada power-on; el reset
+  de sesión de arriba es la herramienta para "empezar de nuevo" dentro
+  de la misma sesión, no para sobrevivir un apagado.
+
 ## [0.10.1]
 - Fix: en 0.10.0, "identificado" (para color y para orden de la lista)
   seguía siendo solo `category != Unknown` -- un dispositivo que anuncia

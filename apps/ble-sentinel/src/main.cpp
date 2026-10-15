@@ -2,15 +2,16 @@
 // manufacturer data. Ver docs/BLE_SENTINEL_SPEC.md para el diseño completo.
 //
 // v1 incluye: fingerprint resistente a rotación de MAC, SignatureDB con
-// smart glasses (Meta/Luxottica, Snap), alertas de audio por categoría,
-// log de avistamientos a SD (timestamp relativo al boot, sin RTC todavía),
-// ConvoyAnalyzer (seguimiento sostenido entre "contextos" marcados a mano)
-// y RoomSweep (seguir un dispositivo puntual por RSSI -- número grande +
-// sparkline + tono continuo opcional, NO un radar: un radar implica
-// dirección/posición que no tenemos, ver room_sweep.h) + ExportModule
-// (CSV/JSON con hash de integridad a SD).
+// smart glasses (Meta/Luxottica, Snap), drones/robots (ASTM Remote ID por
+// Service Data UUID + vendors del registro Bluetooth SIG), alertas de
+// audio por categoría, log de avistamientos a SD (opt-in, tecla `l`,
+// timestamp relativo al boot, sin RTC todavía), ConvoyAnalyzer
+// (seguimiento sostenido entre "contextos" marcados a mano) y RoomSweep
+// (seguir un dispositivo puntual por RSSI -- burbuja de proximidad, NO un
+// radar: un radar implica dirección/posición que no tenemos, ver
+// room_sweep.h) + ExportModule (CSV/JSON con hash de integridad a SD).
 // Pendiente para próximas versiones: WiFiSniffer, soporte de RTC por
-// Grove, más firmas (drones, trackers).
+// Grove, más firmas de trackers (Samsung SmartTag).
 //
 // Flujo de pantallas: Lista -> (enter, con scan pausado) -> Detalle ->
 // (enter) -> Seguimiento. `del` siempre vuelve un paso atrás
@@ -27,6 +28,8 @@
 //   c                     marcar "cambié de lugar" (nuevo contexto, ver ConvoyAnalyzer)
 //   e                     exportar lo visto hasta ahora (CSV + JSON + hash) a SD
 //   l                     prender/apagar el log continuo a SD (arranca apagado)
+//   r                     reiniciar la sesión de prueba (limpia lo visto hasta
+//                         ahora, sin reiniciar el dispositivo; no toca "mío")
 //   +/-                   volumen master
 #include <M5Cardputer.h>
 #include <SD.h>
@@ -165,8 +168,17 @@ struct Resolved {
 // si resolviéramos solo con el paquete de hoy un dispositivo identificado
 // hace 3 paquetes volvería a Unknown en el próximo que no traiga nombre.
 Resolved resolve(uint16_t effectiveCompanyId, uint8_t effectiveMfgTypeByte,
-                  const String &effectiveLocalName, bool fpConfidenceLow)
+                  const String &effectiveLocalName, bool effectiveRemoteId, bool fpConfidenceLow)
 {
+    // Remote ID primero: es la señal más específica que tenemos (un UUID
+    // de Service Data puntual asignado por el Bluetooth SIG a "ASTM Remote
+    // ID", ver ble_scanner.h) y los drones típicamente no traen
+    // manufacturer data, así que no hay riesgo de que un match de
+    // company ID lo tape -- pero mejor chequearlo explícito primero que
+    // depender de que la tabla nunca tenga una colisión.
+    if (effectiveRemoteId) {
+        return {signaturedb::Category::DroneRemoteId, signaturedb::AlertProfile::SuspiciousDefault, fpConfidenceLow};
+    }
     if (const signaturedb::Entry *e = signaturedb::matchByCompanyId(effectiveCompanyId)) {
         return {e->category, e->alertProfile, fpConfidenceLow || !e->verified};
     }
@@ -673,9 +685,9 @@ void render()
     if (toastActive) {
         drawFooter(toastMsg.c_str());
     } else if (!blescanner::scanning() && sightingstore::count() > 0) {
-        drawFooter("; . mover   enter: detalle   e: exportar   l: log SD");
+        drawFooter("; . mover   enter: detalle   e: exportar   l/r: log/reset");
     } else {
-        drawFooter("c: lugar   space: scan   l: log SD   G0: audio");
+        drawFooter("c: lugar   space: scan   l/r: log/reset   G0: audio");
     }
     canvas.pushSprite(0, 0);
     dirty = false;
@@ -735,6 +747,22 @@ void handleKeyboard()
         } else {
             showToast(nowOn ? "log a SD: ON" : "log a SD: OFF");
         }
+        dirty = true;
+    }
+    if (hasChar(ks, "r")) {
+        // Reset de sesión para probar en el campo sin tener que reiniciar
+        // el Cardputer entero cada vez -- limpia todo lo visto hasta ahora
+        // (ver sighting_store::resetSession()). Inmediato, sin
+        // confirmación: el hardware no tiene diálogo modal, y es el mismo
+        // criterio que ya usan `c`/`e`/`l`, una tecla, un efecto.
+        sightingstore::resetSession();
+        convoyanalyzer::begin();
+        roomsweep::stop();
+        screen = Screen::List;
+        cursorIndex = 0;
+        scrollOffset = 0;
+        selectedFingerprint = 0;
+        showToast("sesion reiniciada");
         dirty = true;
     }
 
@@ -848,6 +876,7 @@ void processSightings()
         fin.payloadLen = raw.payloadLen;
         fin.txPowerDbm = raw.txPowerDbm;
         fin.serviceUuids16 = raw.serviceUuids16;
+        fin.remoteIdService = raw.remoteIdService;
         // adTypesPresentMask queda en 0 en v1: distinguir qué AD types trae
         // (más allá de companyId/serviceUuids, que ya entran al fingerprint
         // por su cuenta) es una mejora de precisión para una v2, no bloquea
@@ -866,8 +895,15 @@ void processSightings()
                                       : (existing ? existing->lastMfgTypeByte : 0);
         String effectiveLocalName = raw.localName.length() ? raw.localName
                                    : (existing ? existing->lastLocalName : String());
+        // Remote ID no tiene un campo propio en Record (no hace falta uno
+        // más: category ya persiste la identificación una vez lograda, ver
+        // sighting_store::record()) -- "efectivo" acá es sencillamente "lo
+        // vi ahora, o ya era DroneRemoteId de antes".
+        bool effectiveRemoteId = raw.remoteIdService
+            || (existing && existing->category == signaturedb::Category::DroneRemoteId);
 
-        Resolved res = resolve(effectiveCompanyId, effectiveMfgTypeByte, effectiveLocalName, fp.confidenceLow);
+        Resolved res = resolve(effectiveCompanyId, effectiveMfgTypeByte, effectiveLocalName,
+                               effectiveRemoteId, fp.confidenceLow);
 
         sightingstore::SightingInput input;
         input.fingerprintHash = fp.hash;

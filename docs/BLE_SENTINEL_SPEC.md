@@ -344,12 +344,22 @@ Implementado en `main.cpp`. La lista (`drawList()`/`sortedOrder()`) y la
 navegación por teclado comparten estado:
 
 - **Orden de prioridad**, de más a menos urgente: 1) sospechosos de
-  convoy, 2) resultados **identificados** (`category != Unknown` --
-  tienen una categoría real de SignatureDB, son los interesantes aunque
-  su RSSI sea peor que el de algo no identificado), 3) todo lo demás.
-  Dentro de cada grupo, por RSSI desc, con un **tiebreak final por orden
-  de inserción** (primera vez visto en la sesión) agregado en v0.10.0 --
-  ver bug real abajo.
+  convoy, 2) resultados **identificados** (`isIdentified()`, ver abajo),
+  3) todo lo demás. Dentro de cada grupo, por RSSI desc, con un
+  **tiebreak final por orden de inserción** (primera vez visto en la
+  sesión) agregado en v0.10.0 -- ver bug real abajo.
+- **"Identificado" ampliado en v0.10.1:** ya no es solo `category !=
+  Unknown` (tener una categoría real de SignatureDB) -- un dispositivo
+  que anuncia su propio nombre (ej. AirPods) también cuenta, aunque no
+  matchee ninguna firma. Antes de este fix, un dispositivo con nombre
+  pero `category == Unknown` se mostraba blanco y ordenaba junto con los
+  unknowns reales por RSSI nomás -- el usuario lo marcó como incorrecto:
+  si ya sabemos cómo se llama, no tiene sentido tratarlo igual que algo
+  de lo que no sabemos nada. `isIdentified(const Record*)` en `main.cpp`
+  ahora es `category != Unknown || lastLocalName.length() > 0`, y
+  `categoryColor()` toma el mismo criterio para pintar verde. El audio no
+  cambió: `Unknown` sigue siendo `SuspiciousDefault` tenga nombre o no --
+  un nombre anunciado no prueba nada, lo podría poner cualquiera.
 - **Scroll**: con el scan pausado, `cursorIndex` es un índice absoluto
   sobre toda la lista ordenada, no solo sobre las filas que entran en
   pantalla (`MAX_VISIBLE_ROWS`, hoy 8). `drawList()` calcula una ventana
@@ -424,11 +434,11 @@ usuario, reemplaza la paleta anterior (rojo=sospechoso / gris=auricular /
 
 | Color | Categoría |
 |---|---|
-| Blanco | `Unknown` -- no sabemos nada |
+| Blanco | `Unknown` **sin nombre anunciado tampoco** -- no sabemos nada de verdad |
 | Azul | `SmartGlasses` (incluye cámaras de acción) -- "meta o filmación" |
 | Violeta | `DroneRemoteId` (incluye robots) -- "drones y robots" |
 | Rojo | `FindMyTracker` |
-| Verde | `Headset` o `IdentifiedVendor` -- "otro dispositivo identificado", todo tranquilo |
+| Verde | `Headset`, `IdentifiedVendor`, o `Unknown` **con nombre anunciado** (v0.10.1) -- "otro dispositivo identificado", todo tranquilo |
 
 **Cambio de comportamiento visual deliberado:** antes `Unknown` se
 pintaba rojo ("sin match -> tratado como sospechoso por defecto", la

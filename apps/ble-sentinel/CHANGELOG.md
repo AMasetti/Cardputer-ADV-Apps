@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.10.1]
+- Fix: en 0.10.0, "identificado" (para color y para orden de la lista)
+  seguía siendo solo `category != Unknown` -- un dispositivo que anuncia
+  su propio nombre (ej. AirPods) pero no matchea ninguna firma de
+  SignatureDB quedaba igual que un unknown de verdad: pintado blanco y
+  enterrado al fondo de la lista por RSSI nomás, aunque ya se le conociera
+  el nombre. `isIdentified()` y `categoryColor()` ahora también cuentan
+  "tiene nombre anunciado" como identificado -- se pintan verde y ordenan
+  junto con el resto de lo identificado, no con los unknowns reales. El
+  audio no cambia: `Category::Unknown` sigue siendo `SuspiciousDefault`
+  tenga nombre o no, un nombre anunciado no prueba nada por sí solo.
+- **No es un bug, es una limitación ya documentada:** AirPods y Beats Pro
+  (reportados por el usuario) no aparecen en absoluto mientras están
+  conectados por audio a un teléfono -- usan **Bluetooth Classic (A2DP)**
+  para el audio, no BLE, y mientras están conectados por Classic no
+  tienen razón para seguir anunciando por BLE. `BLEScanner` es
+  observer-only de BLE (NimBLE); Bluetooth Classic es una pila de radio
+  distinta (Bluedroid) que el ESP32 no puede correr al mismo tiempo sin
+  reconfiguración de bajo nivel. Ver sección 4 de la spec -- queda fuera
+  de alcance por ahora, mismo motivo que WiFiSniffer.
+
 ## [0.10.0]
 - Fix real: la lista principal se reordenaba sola entre dispositivos sin
   que nada relevante cambiara -- el comparador de `sortedOrder()` en

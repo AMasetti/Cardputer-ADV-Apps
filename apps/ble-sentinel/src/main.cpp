@@ -94,13 +94,22 @@ const char *categoryLabel(signaturedb::Category c)
 }
 
 // Código de colores pedido explícitamente por el usuario:
-//   blanco  = unknown (no sabemos nada -- ya no se pinta como sospechoso
-//             por defecto, ver nota abajo)
+//   blanco  = unknown DE VERDAD (ni categoría, ni nombre, ni fabricante --
+//             no sabemos nada de este dispositivo más que su señal)
 //   azul    = "meta o filmación" (smart glasses, cámaras de acción)
 //   violeta = drones y robots
 //   rojo    = Find My (Apple)
-//   verde   = otro dispositivo identificado (headset, o vendor genérico
-//             del registro de Bluetooth SIG) -- "todo tranquilo"
+//   verde   = otro dispositivo identificado -- headset, vendor genérico
+//             del registro de Bluetooth SIG, O un dispositivo que anuncia
+//             su propio nombre aunque no matchee ninguna firma (`hasName`)
+//             -- "todo tranquilo"
+//
+// `hasName` es necesario además de `c` porque muchos dispositivos (ej.
+// AirPods, relojes) anuncian un nombre propio sin matchear ninguna
+// categoría de SignatureDB -- category sigue en Unknown, pero ya no es
+// "no sabemos nada", sabemos cómo se llama. Antes de esto esos
+// dispositivos se pintaban blanco igual que uno sin ninguna información,
+// lo que el usuario marcó como incorrecto.
 //
 // Cambio de comportamiento visual deliberado respecto a v1: antes
 // Unknown se pintaba rojo ("sin match -> tratado como sospechoso").
@@ -108,7 +117,10 @@ const char *categoryLabel(signaturedb::Category c)
 // SuspiciousDefault no cambió, ver signature_db.cpp) -- lo que cambia es
 // solo el color, para que la paleta separe "no sé qué es" (blanco,
 // neutro) de "sé qué es y es un tipo de dispositivo que vigilo" (rojo).
-uint16_t categoryColor(signaturedb::Category c, bool confidenceLow)
+// Un dispositivo con nombre pero sin categoría sigue sonando igual que
+// antes (un nombre anunciado no prueba nada por sí solo, lo podría poner
+// cualquiera) -- esto es solo la pintura.
+uint16_t categoryColor(signaturedb::Category c, bool confidenceLow, bool hasName)
 {
     switch (c) {
         case signaturedb::Category::SmartGlasses:
@@ -121,8 +133,20 @@ uint16_t categoryColor(signaturedb::Category c, bool confidenceLow)
         case signaturedb::Category::IdentifiedVendor:
             return C_ON;
         default:
-            return C_TEXT; // Unknown -- blanco, neutro (ver AlertProfile en signature_db.h)
+            return hasName ? C_ON : C_TEXT; // Unknown con nombre -> verde; sin nada -> blanco
     }
+}
+
+// Mismo criterio que categoryColor(): "identificado" para orden/color ya
+// no es solo `category != Unknown` -- un dispositivo que anuncia su
+// propio nombre también cuenta, aunque SignatureDB no lo matchee contra
+// nada. Antes esos quedaban mezclados con los "unknown" de verdad tanto
+// en color (blanco) como en orden (al fondo de la lista, por RSSI nomás)
+// -- el usuario pidió las dos cosas: que se pinten verde Y que no queden
+// enterrados debajo de un montón de unknowns reales.
+bool isIdentified(const sightingstore::Record *r)
+{
+    return r->category != signaturedb::Category::Unknown || r->lastLocalName.length() > 0;
 }
 
 // Resuelve categoría + perfil de alerta para un RawSighting ya mapeado a
@@ -254,13 +278,6 @@ void drawSignalBars(int x, int y, int rssi, uint16_t color)
     }
 }
 
-// "Identificado" = tiene una categoría real de SignatureDB, no el default
-// de "no matcheó nada". Separado de confidenceLow a propósito: un match
-// no verificado sigue siendo un resultado identificado (sabemos qué es,
-// aunque la firma no esté confirmada todavía), lo que no es identificado
-// es Unknown -- ahí no sabemos nada.
-bool isIdentified(signaturedb::Category c) { return c != signaturedb::Category::Unknown; }
-
 // Un dispositivo deja de anunciarse en cuanto sale de rango -- pero el
 // Record se queda para siempre en `records` (vive toda la sesión, lo
 // necesitan Detalle/Seguimiento y el log a SD). Sin esto, la lista
@@ -279,6 +296,11 @@ bool isActive(const sightingstore::Record *r) { return millis() - r->lastSeenMs 
 // demás, 4) marcados como propios (ya los conocés, no urge mirarlos; un
 // AirTag tuyo que vas a llevar siempre contigo calificaría para el
 // grupo 1 si no fuera por esto). Dentro de cada grupo, por RSSI desc.
+// "Identificado" (ver isIdentified()) incluye a cualquier dispositivo con
+// nombre anunciado, no solo los que matchean una categoría de
+// SignatureDB -- si sabemos cómo se llama, no tiene sentido que quede
+// enterrado debajo de un montón de "unknown" de verdad solo por tener
+// peor señal en este momento.
 // Compartido entre drawList() y la selección por teclado -- ambos tienen
 // que ver exactamente el mismo orden, si no cursorIndex apunta a una fila
 // distinta de la que se ve.
@@ -321,8 +343,8 @@ std::vector<size_t> sortedOrder()
         bool convoyA = !ra->trusted && convoyanalyzer::isSuspect(ra->fingerprintHash);
         bool convoyB = !rb->trusted && convoyanalyzer::isSuspect(rb->fingerprintHash);
         if (convoyA != convoyB) return convoyA;
-        bool idA = isIdentified(ra->category);
-        bool idB = isIdentified(rb->category);
+        bool idA = isIdentified(ra);
+        bool idB = isIdentified(rb);
         if (idA != idB) return idA;
         if (ra->lastRssi != rb->lastRssi) return ra->lastRssi > rb->lastRssi;
         return a < b; // empate real -- orden determinístico, no azar de std::sort
@@ -376,7 +398,8 @@ void drawList()
         // sospechoso de convoy, aunque el score le dé igual -- ver
         // sortedOrder() y processSightings() para el por qué.
         bool convoySuspect = !r->trusted && convoyanalyzer::isSuspect(r->fingerprintHash);
-        uint16_t color = r->trusted ? C_ON : categoryColor(r->category, r->confidenceLow);
+        uint16_t color = r->trusted ? C_ON
+                       : categoryColor(r->category, r->confidenceLow, r->lastLocalName.length() > 0);
         bool sel = selectable && static_cast<int>(absIndex) == cursorIndex;
 
         if (sel) canvas.fillRect(0, y, SCREEN_W, ROW_H - 1, C_HUD);
@@ -466,7 +489,8 @@ void drawDetail()
 
     canvas.setFont(&fonts::Font0);
     canvas.setTextDatum(middle_left);
-    canvas.setTextColor(r->trusted ? C_ON : categoryColor(r->category, r->confidenceLow), C_BG);
+    canvas.setTextColor(r->trusted ? C_ON
+                       : categoryColor(r->category, r->confidenceLow, r->lastLocalName.length() > 0), C_BG);
     canvas.drawString(r->trusted ? String(categoryLabel(r->category)) + " [MIO]"
                                    : String(categoryLabel(r->category)),
                        4, 9);

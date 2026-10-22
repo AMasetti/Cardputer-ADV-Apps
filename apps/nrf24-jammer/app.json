@@ -1,0 +1,9 @@
+{
+  "name": "nrf24-jammer",
+  "displayName": "nRF24 Jammer",
+  "version": "0.1.0",
+  "description": "Jammer 2.4 GHz basado en nRF24L01+ para Cardputer-Adv. Soporta Bluetooth, drones, WiFi, BLE y Zigbee.",
+  "target": "cardputer-adv",
+  "builder": "platformio",
+  "env": "cardputer"
+}

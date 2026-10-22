@@ -181,12 +181,12 @@ static void jamTask(){
     if(st.menu==MENU_BT){
         while(!st.stop){
             if(st.bt==BT_LIST) for(size_t i=0;i<sizeof(BT_CHANS)&&!st.stop;i++){radio.setChannel(BT_CHANS[i]);radio.write(buf,sizeof(buf));}
-            else if(st.bt==BT_RAND) {radio.setChannel(esp_random()%81);radio.write(buf,sizeof(buf));}
+            else if(st.bt==BT_RAND) {radio.setChannel(random(0,81));radio.write(buf,sizeof(buf));}
             else for(uint8_t c=0;c<=80&&!st.stop;c++){radio.setChannel(c);radio.write(buf,sizeof(buf));}
         }
     } else if(st.menu==MENU_DRONE){
         while(!st.stop){
-            if(st.dr==DR_RAND){radio.setChannel(esp_random()%126);radio.write(buf,sizeof(buf));}
+            if(st.dr==DR_RAND){radio.setChannel(random(0,126));radio.write(buf,sizeof(buf));}
             else for(uint8_t c=0;c<=125&&!st.stop;c++){radio.setChannel(c);radio.write(buf,sizeof(buf));}
         }
     } else if(st.menu==MENU_WIFI){
@@ -213,11 +213,7 @@ static void jamTask(){
         }
     } else if(st.menu==MENU_MISC){
         while(!st.stop){
-            if(st.ms==MS_CHAN){
-                for(uint8_t c=st.msStart;c<=st.msStop&&!st.stop;c++){radio.setChannel(c);radio.write(buf,sizeof(buf));}
-            } else {
-                for(uint8_t c=st.msStart;c<=st.msStop&&!st.stop;c++){radio.setChannel(c);radio.write(buf,sizeof(buf));}
-            }
+            for(uint8_t c=st.msStart;c<=st.msStop&&!st.stop;c++){radio.setChannel(c);radio.write(buf,sizeof(buf));}
         }
     }
 }
@@ -232,7 +228,6 @@ static void keys(){
 
     if(k.keys.find(';')!=std::string::npos){
         if(!st.subMenu&&st.menu>0)st.menu=(Menu)((int)st.menu-1);
-        else if(st.subMenu){} // nop
         render(); return;
     }
     if(k.keys.find('.')!=std::string::npos){
@@ -247,8 +242,6 @@ static void keys(){
         if(st.subMenu){
             if(st.menu==MENU_MISC){
                 if(st.msSetStart){st.msSetStart=false;render();return;}
-            } else if(st.menu==MENU_WIFI && st.wf==WF_SEL && !st.subMenu){
-                st.subMenu=true; render(); return;
             }
             startJam(); return;
         }
@@ -286,8 +279,7 @@ void setup(){
     M5Cardputer.begin(cfg,true);
     M5Cardputer.Display.setRotation(1);
     M5Cardputer.Display.setBrightness(160);
-    SPI.begin(40,39,14,5);
-    if(radio.begin(&SPI)){st.connected=true;radio.setAutoAck(false);}
+    if(radio.begin()){st.connected=true;radio.setAutoAck(false);}
     prefs.begin("nrf24jam",false);
     st.bt=(BtMode)prefs.getUChar("bt",0);
     st.dr=(DrMode)prefs.getUChar("dr",0);

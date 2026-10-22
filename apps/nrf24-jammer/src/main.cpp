@@ -46,7 +46,7 @@ void draw() {
     d.fillScreen(C_BG);
 
     d.fillRect(0, 0, 240, 16, C_PANEL);
-    d.setTextFont(&fonts::lgfxJapanGothicP_12);
+    d.setFont(&fonts::lgfxJapanGothicP_12);
     d.setTextDatum(textdatum_t::middle_left);
     d.setTextColor(C_TEXT);
     d.drawString("nRF24 Jammer", 4, 8);
@@ -222,7 +222,7 @@ void loop() {
         } else if (st.enter) {
             startJamming();
         } else {
-            for (size_t i = 0; i < st.word.length(); i++) {
+            for (size_t i = 0; i < st.word.size(); i++) {
                 char c = st.word[i];
                 if (c == ';' && menu > 0) menu--;
                 else if (c == '.' && menu < 5) menu++;

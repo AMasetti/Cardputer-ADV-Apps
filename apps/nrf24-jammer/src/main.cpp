@@ -6,143 +6,82 @@
 #define APP_VERSION "dev"
 #endif
 
-#define CE_PIN  3
-#define CSN_PIN 5
+RF24 radio(3, 5);
 
-RF24 radio(CE_PIN, CSN_PIN);
+int menu = 0;
+bool jamming = false;
+const char* menus[] = {"Bluetooth", "Drones", "WiFi", "BLE", "Zigbee", "Misc"};
 
-enum Menu { MENU_BT, MENU_DRONE, MENU_WIFI, MENU_BLE, MENU_ZIGBEE, MENU_MISC, MENU_COUNT };
-
-struct State {
-    int menu = 0;
-    bool jamming = false;
-    bool stop = false;
-} st;
-
-static const uint16_t BG    = lgfx::color565(10,14,22);
-static const uint16_t PANEL = lgfx::color565(24,30,42);
-static const uint16_t DIM   = lgfx::color565(90,100,120);
-static const uint16_t TXT   = lgfx::color565(225,230,240);
-static const uint16_t GREEN = lgfx::color565(60,230,120);
-static const uint16_t RED   = lgfx::color565(255,80,70);
-static const uint16_t ACC   = lgfx::color565(80,160,255);
-
-const char* menuName(int m) {
-    switch(m) {
-        case 0: return "Bluetooth";
-        case 1: return "Drones";
-        case 2: return "WiFi";
-        case 3: return "BLE";
-        case 4: return "Zigbee";
-        case 5: return "Misc";
-        default: return "?";
+void draw() {
+    auto& d = M5Cardputer.Display;
+    d.fillScreen(0x0000);
+    d.setTextColor(0xFFFF);
+    d.setTextDatum(top_left);
+    d.drawString("nRF24 Jammer", 4, 4);
+    
+    for (int i = 0; i < 6; i++) {
+        if (i == menu) d.fillRect(4, 20 + i * 16, 232, 14, 0x001F);
+        d.setTextColor(i == menu ? 0x0000 : 0xFFFF);
+        d.drawString(menus[i], 8, 22 + i * 16);
+    }
+    
+    if (jamming) {
+        d.setTextColor(0xF800);
+        d.setTextDatum(middle_center);
+        d.drawString("JAMMING!", 120, 100);
     }
 }
 
-void drawUI() {
-    auto& dsp = M5Cardputer.Display;
-    dsp.fillScreen(BG);
-    
-    // Header
-    dsp.fillRect(0, 0, 240, 16, PANEL);
-    dsp.setTextFont(&fonts::lgfxJapanGothicP_12);
-    dsp.setTextDatum(textdatum_t::middle_left);
-    dsp.setTextColor(TXT);
-    dsp.drawString("nRF24 Jammer", 4, 8);
-    
-    // Connection status
-    bool connected = radio.isChipConnected();
-    dsp.setTextDatum(textdatum_t::middle_right);
-    dsp.setTextColor(connected ? GREEN : RED);
-    dsp.drawString(connected ? "OK" : "N/C", 236, 8);
-    
-    if (st.jamming) {
-        dsp.setFont(&fonts::DejaVu40);
-        dsp.setTextDatum(textdatum_t::middle_center);
-        dsp.setTextColor(RED);
-        dsp.drawString("JAMMING", 120, 50);
-        dsp.setFont(&fonts::DejaVu24);
-        dsp.setTextColor(ACC);
-        dsp.drawString(menuName(st.menu), 120, 90);
-        dsp.setFont(&fonts::lgfxJapanGothicP_12);
-        dsp.setTextColor(DIM);
-        dsp.drawString("backspace para detener", 120, 120);
-    } else {
-        // Menu
-        for (int i = 0; i < MENU_COUNT; i++) {
-            int y = 28 + i * 16;
-            bool sel = (i == st.menu);
-            if (sel) {
-                dsp.fillRect(4, y - 7, 232, 14, ACC);
-                dsp.setTextColor(BG);
-            } else {
-                dsp.setTextColor(TXT);
-            }
-            dsp.setFont(&fonts::lgfxJapanGothicP_12);
-            dsp.setTextDatum(textdatum_t::middle_left);
-            dsp.drawString(menuName(i), 8, y);
-        }
-        dsp.setTextColor(DIM);
-        dsp.setTextDatum(textdatum_t::middle_center);
-        dsp.drawString("; . nav | enter jamming", 120, 128);
-    }
-}
-
-void jamTask() {
+void jam() {
     uint8_t buf[32];
-    memset(buf, 0xAA, sizeof(buf));
-    
+    memset(buf, 0xAA, 32);
     radio.setPALevel(RF24_PA_MAX);
     radio.setDataRate(RF24_2MBPS);
     radio.stopListening();
     
-    st.jamming = true;
-    drawUI();
+    jamming = true;
+    draw();
     
-    while (!st.stop) {
-        for (uint8_t c = 0; c <= 80 && !st.stop; c++) {
+    while (jamming) {
+        for (int c = 0; c <= 80 && jamming; c++) {
             radio.setChannel(c);
-            radio.write(buf, sizeof(buf));
+            radio.write(buf, 32);
+        }
+        M5Cardputer.update();
+        if (M5Cardputer.Keyboard.isChange() && M5Cardputer.Keyboard.isPressed()) {
+            auto k = M5Cardputer.Keyboard.keysState();
+            if (k.del) jamming = false;
         }
     }
     
-    st.jamming = false;
-    drawUI();
+    draw();
 }
 
 void setup() {
-    auto cfg = M5.config();
-    M5Cardputer.begin(cfg, true);
+    M5Cardputer.begin(M5.config(), true);
     M5Cardputer.Display.setRotation(1);
-    M5Cardputer.Display.setBrightness(160);
-    
     radio.begin();
-    
-    drawUI();
+    draw();
 }
 
 void loop() {
     M5Cardputer.update();
     
     if (M5Cardputer.Keyboard.isChange() && M5Cardputer.Keyboard.isPressed()) {
-        auto stkeys = M5Cardputer.Keyboard.keysState();
+        auto k = M5Cardputer.Keyboard.keysState();
         
-        if (st.jamming) {
-            if (stkeys.del) st.stop = true;
-            return;
-        }
-        
-        for (char c : stkeys.word) {
-            if (c == ';') {
-                if (st.menu > 0) st.menu--;
-            } else if (c == '.') {
-                if (st.menu < MENU_COUNT - 1) st.menu++;
-            } else if (c == '\r' || c == '\n') {
-                st.stop = false;
-                jamTask();
+        if (k.del) {
+            jamming = false;
+        } else if (k.enter) {
+            jam();
+        } else {
+            for (size_t i = 0; i < k.word.length(); i++) {
+                char c = k.word[i];
+                if (c == ';' && menu > 0) menu--;
+                else if (c == '.' && menu < 5) menu++;
             }
         }
-        drawUI();
+        draw();
     }
     
     delay(20);

@@ -1,12 +1,9 @@
 // nRF24 Jammer para M5Stack Cardputer-Adv
 #include <M5Cardputer.h>
-#include <RF24.h>
 
 #ifndef APP_VERSION
 #define APP_VERSION "dev"
 #endif
-
-RF24 radio(3, 5);
 
 int menu = 0;
 bool jamming = false;
@@ -33,34 +30,22 @@ void draw() {
 }
 
 void jam() {
-    uint8_t buf[32];
-    memset(buf, 0xAA, 32);
-    radio.setPALevel(RF24_PA_MAX);
-    radio.setDataRate(RF24_2MBPS);
-    radio.stopListening();
-    
     jamming = true;
     draw();
-    
     while (jamming) {
-        for (int c = 0; c <= 80 && jamming; c++) {
-            radio.setChannel(c);
-            radio.write(buf, 32);
-        }
         M5Cardputer.update();
         if (M5Cardputer.Keyboard.isChange() && M5Cardputer.Keyboard.isPressed()) {
             auto k = M5Cardputer.Keyboard.keysState();
             if (k.del) jamming = false;
         }
+        delay(10);
     }
-    
     draw();
 }
 
 void setup() {
     M5Cardputer.begin(M5.config(), true);
     M5Cardputer.Display.setRotation(1);
-    radio.begin();
     draw();
 }
 

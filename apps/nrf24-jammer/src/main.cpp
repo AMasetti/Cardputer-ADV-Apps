@@ -226,52 +226,42 @@ static void keys(){
     auto k=M5Cardputer.Keyboard.keysState();
     if(st.jamming){if(k.del)stopJam();return;}
 
-    if(k.keys.find(';')!=std::string::npos){
-        if(!st.subMenu&&st.menu>0)st.menu=(Menu)((int)st.menu-1);
-        render(); return;
-    }
-    if(k.keys.find('.')!=std::string::npos){
-        if(!st.subMenu&&st.menu<MENU_COUNT-1)st.menu=(Menu)((int)st.menu+1);
-        render(); return;
-    }
-    if(k.del){
-        if(st.subMenu){st.subMenu=false;st.msSetStart=true;}
-        render(); return;
-    }
-    if(k.enter){
-        if(st.subMenu){
-            if(st.menu==MENU_MISC){
-                if(st.msSetStart){st.msSetStart=false;render();return;}
-            }
-            startJam(); return;
-        }
-        st.subMenu=true; render(); return;
-    }
-
+    bool handled=false;
     for(char c:k.word){
-        switch(c){
-        case ',': case '<':
+        if(c==';'){if(!st.subMenu&&st.menu>0)st.menu=(Menu)((int)st.menu-1);handled=true;}
+        else if(c=='.'){if(!st.subMenu&&st.menu<MENU_COUNT-1)st.menu=(Menu)((int)st.menu+1);handled=true;}
+        else if(c=='\b'||c==127){if(st.subMenu){st.subMenu=false;st.msSetStart=true;}handled=true;}
+        else if(c=='\r'||c=='\n'){
+            if(st.subMenu){
+                if(st.menu==MENU_MISC&&st.msSetStart){st.msSetStart=false;render();return;}
+                startJam(); return;
+            }
+            st.subMenu=true; handled=true;
+        }
+        else if(c==','||c=='<'){
             if(st.menu==MENU_MISC&&st.subMenu){
                 if(st.msSetStart){if(st.msStart>0)st.msStart--;}
                 else{if(st.msStop>st.msStart)st.msStop--;}
-            } else if(st.menu==MENU_WIFI&&st.subMenu&&st.wf==WF_SEL){if(st.wfChan>1)st.wfChan--;}
-            break;
-        case '/': case '>':
+            } else if(st.menu==MENU_WIFI&&st.subMenu&&st.wf==WF_SEL&&st.wfChan>1)st.wfChan--;
+            handled=true;
+        }
+        else if(c=='/'||c=='>'){
             if(st.menu==MENU_MISC&&st.subMenu){
                 if(st.msSetStart){if(st.msStart<124)st.msStart++;}
                 else{if(st.msStop<125)st.msStop++;}
-            } else if(st.menu==MENU_WIFI&&st.subMenu&&st.wf==WF_SEL){if(st.wfChan<14)st.wfChan++;}
-            break;
-        case ' ': case 'm': case 'M':
+            } else if(st.menu==MENU_WIFI&&st.subMenu&&st.wf==WF_SEL&&st.wfChan<14)st.wfChan++;
+            handled=true;
+        }
+        else if(c==' '||c=='m'||c=='M'){
             if(st.menu==MENU_BT&&st.subMenu)st.bt=(BtMode)(((int)st.bt+1)%3);
             else if(st.menu==MENU_DRONE&&st.subMenu)st.dr=(DrMode)(((int)st.dr+1)%2);
             else if(st.menu==MENU_WIFI&&st.subMenu)st.wf=(WfMode)(((int)st.wf+1)%2);
             else if(st.menu==MENU_BLE&&st.subMenu)st.bl=(BlMode)(((int)st.bl+1)%2);
             else if(st.menu==MENU_MISC&&st.subMenu)st.ms=(MsMode)(((int)st.ms+1)%2);
-            break;
+            handled=true;
         }
     }
-    render();
+    if(handled)render();
 }
 
 void setup(){

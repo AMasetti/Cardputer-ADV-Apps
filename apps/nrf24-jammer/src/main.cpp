@@ -1,73 +1,28 @@
-// nRF24 Jammer para M5Stack Cardputer-Adv
 #include <M5Cardputer.h>
 
 #ifndef APP_VERSION
 #define APP_VERSION "dev"
 #endif
 
-int menu = 0;
-bool jamming = false;
-const char* menus[] = {"Bluetooth", "Drones", "WiFi", "BLE", "Zigbee", "Misc"};
-
-void draw() {
-    auto& d = M5Cardputer.Display;
-    d.fillScreen(0x0000);
-    d.setTextColor(0xFFFF);
-    d.setTextDatum(top_left);
-    d.drawString("nRF24 Jammer", 4, 4);
-    
-    for (int i = 0; i < 6; i++) {
-        if (i == menu) d.fillRect(4, 20 + i * 16, 232, 14, 0x001F);
-        d.setTextColor(i == menu ? 0x0000 : 0xFFFF);
-        d.drawString(menus[i], 8, 22 + i * 16);
-    }
-    
-    if (jamming) {
-        d.setTextColor(0xF800);
-        d.setTextDatum(middle_center);
-        d.drawString("JAMMING!", 120, 100);
-    }
-}
-
-void jam() {
-    jamming = true;
-    draw();
-    while (jamming) {
-        M5Cardputer.update();
-        if (M5Cardputer.Keyboard.isChange() && M5Cardputer.Keyboard.isPressed()) {
-            auto k = M5Cardputer.Keyboard.keysState();
-            if (k.del) jamming = false;
-        }
-        delay(10);
-    }
-    draw();
-}
-
-void setup() {
-    M5Cardputer.begin(M5.config(), true);
+void setup()
+{
+    auto cfg = M5.config();
+    M5Cardputer.begin(cfg, true);
     M5Cardputer.Display.setRotation(1);
-    draw();
+    M5Cardputer.Display.setTextSize(2);
+    M5Cardputer.Display.drawString("nRF24 Jammer", 8, 8);
+    M5Cardputer.Display.setTextSize(1);
+    M5Cardputer.Display.drawString("v" APP_VERSION, 8, 32);
 }
 
-void loop() {
+void loop()
+{
     M5Cardputer.update();
-    
     if (M5Cardputer.Keyboard.isChange() && M5Cardputer.Keyboard.isPressed()) {
-        auto k = M5Cardputer.Keyboard.keysState();
-        
-        if (k.del) {
-            jamming = false;
-        } else if (k.enter) {
-            jam();
-        } else {
-            for (size_t i = 0; i < k.word.length(); i++) {
-                char c = k.word[i];
-                if (c == ';' && menu > 0) menu--;
-                else if (c == '.' && menu < 5) menu++;
-            }
-        }
-        draw();
+        auto st = M5Cardputer.Keyboard.keysState();
+        String s;
+        for (char c : st.word) s += c;
+        M5Cardputer.Display.fillRect(8, 60, 220, 16, TFT_BLACK);
+        M5Cardputer.Display.drawString(s, 8, 60);
     }
-    
-    delay(20);
 }
